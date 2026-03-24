@@ -5,16 +5,18 @@ import asyncio
 import logging
 
 from app.routes import trades, bots, market
-from app.services.scheduler import run_scheduler
+from app.services.scheduler import run_scheduler, get_client
+from app.services.fill_tracker import run_fill_tracker
 
 log = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     log.info("Starting scheduler...")
-    task = asyncio.create_task(run_scheduler())
+    client = get_client()
+    asyncio.create_task(run_scheduler())
+    asyncio.create_task(run_fill_tracker(client))
     yield
-    task.cancel()
 
 app = FastAPI(title="Polymarket Bot API", version="1.0.0", lifespan=lifespan)
 
