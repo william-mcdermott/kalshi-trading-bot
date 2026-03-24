@@ -7,11 +7,11 @@ from sqlalchemy import select
 from app.models.db import SessionLocal, init_db
 from app.models.database import BotStatus, Trade
 from app.services.trader import place_order
-from app.bots.btc_threshold_strategy import generate_signal as btc_signal
+from app.bots.btc_threshold_strategy import generate_signal as btc_signal, find_best_market
 
-TICK_INTERVAL  = 60
-MARKET_TICKER  = "KXBTCD-26MAR2517-T70649.99"
-SERIES_TICKER  = "KXBTCD"
+TICK_INTERVAL    = 60
+SERIES_TICKER    = "KXBTCD"
+MARKET_REFRESH   = 900  # re-pick best market every 15 minutes
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,24 +36,23 @@ def get_client():
     return KalshiClient(config)
 
 
-async def get_contract_price(client) -> float:
-    """Fetches current YES ask price for the market from Kalshi."""
+async def get_contract_price(client, ticker: str) -> float:
+    """Fetches current YES ask price for a market from Kalshi."""
     try:
         now    = int(time.time())
         result = await client.get_market_candlesticks(
             series_ticker=SERIES_TICKER,
-            ticker=MARKET_TICKER,
-            start_ts=now - 3600,  # look back 1 hour instead of 5 minutes
+            ticker=ticker,
+            start_ts=now - 3600,
             end_ts=now,
             period_interval=1,
         )
         candles = [c for c in (result.candlesticks or [])
                    if c.yes_ask.close_dollars and c.yes_ask.close_dollars != '0.0000']
         if not candles:
-            log.warning("No candle data with prices, using fallback")
+            log.warning(f"No candle data for {ticker}, using fallback 0.5")
             return 0.5
-        latest = candles[-1]
-        price  = float(latest.yes_ask.close_dollars)
+        price = float(candles[-1].yes_ask.close_dollars)
         log.info(f"Contract price: {price:.4f}")
         return price
     except Exception as e:
@@ -61,7 +60,7 @@ async def get_contract_price(client) -> float:
         return 0.5
 
 
-async def run_bot(strategy_name: str, client):
+async def run_bot(strategy_name: str, client, market_ticker: str):
     async with SessionLocal() as db:
         result = await db.execute(
             select(BotStatus).where(BotStatus.strategy == strategy_name)
@@ -72,23 +71,18 @@ async def run_bot(strategy_name: str, client):
             log.debug(f"{strategy_name}: not running, skipping")
             return
 
-        # Get current contract price from Kalshi
-        contract_price = await get_contract_price(client)
-
-        # Generate signal using BTC price vs threshold strategy
-        signal = btc_signal(MARKET_TICKER, contract_price)
+        contract_price = await get_contract_price(client, market_ticker)
+        signal         = btc_signal(market_ticker, contract_price)
         log.info(f"{strategy_name}: {signal.action}  confidence={signal.confidence:.2f}  reason={signal.reason}")
 
         if signal.action == "HOLD":
             return
 
-        # Place the order
-        order_result = await place_order(signal, MARKET_TICKER, bot.position_size)
+        order_result = await place_order(signal, market_ticker, bot.position_size)
 
-        # Log the trade
         trade = Trade(
             strategy=strategy_name,
-            market_id=MARKET_TICKER,
+            market_id=market_ticker,
             side=signal.action,
             price=signal.price,
             size=bot.position_size,
@@ -106,16 +100,27 @@ async def run_bot(strategy_name: str, client):
 
 async def bot_loop(strategy_name: str, client):
     log.info(f"{strategy_name}: loop started (every {TICK_INTERVAL}s)")
+
+    market_ticker    = None
+    last_market_pick = 0
+
     while True:
         try:
-            await run_bot(strategy_name, client)
+            # Re-pick the best market every 15 minutes
+            if time.time() - last_market_pick > MARKET_REFRESH or market_ticker is None:
+                market_ticker, _ = await find_best_market(client)
+                last_market_pick = time.time()
+
+            await run_bot(strategy_name, client, market_ticker)
+
         except Exception as e:
             log.error(f"{strategy_name}: error — {e}")
+
         await asyncio.sleep(TICK_INTERVAL)
 
 
 async def run_scheduler():
     await init_db()
     client = get_client()
-    log.info("Scheduler started with BTC threshold strategy")
+    log.info("Scheduler started — auto-selecting best KXBTCD market")
     await asyncio.gather(*[bot_loop(name, client) for name in STRATEGIES])

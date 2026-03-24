@@ -117,3 +117,43 @@ def generate_signal(market_ticker: str, contract_price: float) -> Signal:
             confidence=0,
             reason=f"BTC below threshold but contract already fairly priced at {contract_price:.2f}",
         )
+
+
+async def find_best_market(client) -> tuple[str, float]:
+    """
+    Finds the open KXBTCD market whose threshold is closest to
+    current Bitcoin price. Returns (ticker, threshold).
+    """
+    import httpx
+
+    btc_price = fetch_btc_price()
+    log.info(f"Finding best market — BTC=${btc_price:,.2f}")
+
+    async with httpx.AsyncClient() as http:
+        r = await http.get(
+            "https://api.elections.kalshi.com/trade-api/v2/markets",
+            params={"limit": 100, "status": "open", "series_ticker": "KXBTCD"},
+        )
+        markets = r.json().get("markets", [])
+
+    best_ticker    = None
+    best_threshold = None
+    best_distance  = float("inf")
+
+    for m in markets:
+        ticker = m.get("ticker", "")
+        try:
+            threshold = parse_threshold(ticker)
+        except ValueError:
+            continue
+        distance = abs(btc_price - threshold)
+        if distance < best_distance:
+            best_distance  = distance
+            best_ticker    = ticker
+            best_threshold = threshold
+
+    if not best_ticker:
+        raise ValueError("No suitable KXBTCD market found")
+
+    log.info(f"Best market: {best_ticker} (threshold=${best_threshold:,.2f}, distance=${best_distance:,.2f})")
+    return best_ticker, best_threshold
