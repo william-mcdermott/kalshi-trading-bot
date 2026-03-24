@@ -1,0 +1,23 @@
+# requirements.txt
+# Install everything with: pip install -r requirements.txt
+#
+# Versions are intentionally loose (>=) rather than pinned (==)
+# because several libraries don't yet publish wheels for Python 3.14.
+# Pinning to an exact version that predates 3.14 causes install failures.
+
+fastapi>=0.111.0         # Web framework (like Express)
+uvicorn>=0.29.0          # Server that runs FastAPI (like nodemon)
+python-dotenv>=1.0.0     # Loads .env files (same concept as in Node)
+httpx>=0.27.0            # Makes HTTP requests (like fetch or axios)
+pandas>=2.2.0            # Data manipulation — used for OHLCV data
+ccxt>=4.4.0              # Crypto exchange data (OHLCV prices)
+py-clob-client>=0.18.0   # Official Polymarket SDK
+sqlalchemy>=2.0.0        # Database ORM (like Mongoose, but for SQL)
+aiosqlite>=0.20.0        # Async SQLite driver
+pydantic>=2.7.0          # Data validation — built into FastAPI
+pytest>=8.0.0            # Testing (like Jest)
+pytest-asyncio>=0.23.0   # Async test support
+
+# pandas-ta removed — not compatible with Python 3.14.
+# Indicators (MACD, RSI, VWAP) are implemented in app/bots/indicators.py
+# using plain pandas math. No external indicator library needed.

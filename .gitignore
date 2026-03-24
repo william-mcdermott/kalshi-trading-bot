@@ -1,0 +1,8 @@
+backend/kalshi_private_key.pem
+backend/.env
+dashboard/.env
+__pycache__/
+*.pyc
+backend/data/
+backend/*.egg-info/
+backend/venv/

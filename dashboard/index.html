@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Polymarket Bot — Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="src/styles/main.css"/>
+</head>
+<body>
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="logo">PMBOT</span>
+      <span class="separator">/</span>
+      <span class="subtitle">incubation dashboard</span>
+    </div>
+    <div class="topbar-right">
+      <span class="clock" id="clock">--:--:--</span>
+      <span class="dot dot--live" id="server-dot"></span>
+      <span class="server-status" id="server-status">connecting...</span>
+    </div>
+  </header>
+
+  <main class="layout">
+
+    <!-- Left sidebar: bot controls -->
+    <aside class="sidebar">
+      <div class="section-label">strategies</div>
+
+      <!-- MACD Bot -->
+      <div class="bot-card" id="bot-macd">
+        <div class="bot-header">
+          <div>
+            <div class="bot-name">MACD</div>
+            <div class="bot-desc">fast 3 / slow 15 / sig 3</div>
+          </div>
+          <div class="toggle-wrap">
+            <label class="toggle">
+              <input type="checkbox" id="toggle-macd" onchange="toggleBot('macd', this.checked)"/>
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+        </div>
+        <div class="bot-stats">
+          <div class="stat">
+            <div class="stat-val" id="macd-trades">—</div>
+            <div class="stat-key">trades</div>
+          </div>
+          <div class="stat">
+            <div class="stat-val" id="macd-pnl">—</div>
+            <div class="stat-key">p&amp;l</div>
+          </div>
+          <div class="stat">
+            <div class="stat-val" id="macd-status">offline</div>
+            <div class="stat-key">status</div>
+          </div>
+        </div>
+        <div class="size-row">
+          <label class="size-label">size $</label>
+          <input class="size-input" id="size-macd" type="number" value="1" min="1" max="100" step="1"/>
+        </div>
+      </div>
+
+      <!-- RSI Bot -->
+      <div class="bot-card" id="bot-rsi">
+        <div class="bot-header">
+          <div>
+            <div class="bot-name">RSI</div>
+            <div class="bot-desc">mean reversion · rsi 14</div>
+          </div>
+          <div class="toggle-wrap">
+            <label class="toggle">
+              <input type="checkbox" id="toggle-rsi" onchange="toggleBot('rsi', this.checked)"/>
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+        </div>
+        <div class="bot-stats">
+          <div class="stat">
+            <div class="stat-val" id="rsi-trades">—</div>
+            <div class="stat-key">trades</div>
+          </div>
+          <div class="stat">
+            <div class="stat-val" id="rsi-pnl">—</div>
+            <div class="stat-key">p&amp;l</div>
+          </div>
+          <div class="stat">
+            <div class="stat-val" id="rsi-status">offline</div>
+            <div class="stat-key">status</div>
+          </div>
+        </div>
+        <div class="size-row">
+          <label class="size-label">size $</label>
+          <input class="size-input" id="size-rsi" type="number" value="1" min="1" max="100" step="1"/>
+        </div>
+      </div>
+
+      <!-- CVD Bot -->
+      <div class="bot-card" id="bot-cvd">
+        <div class="bot-header">
+          <div>
+            <div class="bot-name">CVD</div>
+            <div class="bot-desc">volume delta divergence</div>
+          </div>
+          <div class="toggle-wrap">
+            <label class="toggle">
+              <input type="checkbox" id="toggle-cvd" onchange="toggleBot('cvd', this.checked)"/>
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+        </div>
+        <div class="bot-stats">
+          <div class="stat">
+            <div class="stat-val" id="cvd-trades">—</div>
+            <div class="stat-key">trades</div>
+          </div>
+          <div class="stat">
+            <div class="stat-val" id="cvd-pnl">—</div>
+            <div class="stat-key">p&amp;l</div>
+          </div>
+          <div class="stat">
+            <div class="stat-val" id="cvd-status">offline</div>
+            <div class="stat-key">status</div>
+          </div>
+        </div>
+        <div class="size-row">
+          <label class="size-label">size $</label>
+          <input class="size-input" id="size-cvd" type="number" value="1" min="1" max="100" step="1"/>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <section class="content">
+
+      <!-- Summary strip -->
+      <div class="summary-strip">
+        <div class="kpi">
+          <div class="kpi-val" id="kpi-pnl">$0.00</div>
+          <div class="kpi-key">total p&amp;l</div>
+        </div>
+        <div class="kpi-divider"></div>
+        <div class="kpi">
+          <div class="kpi-val" id="kpi-trades">0</div>
+          <div class="kpi-key">total trades</div>
+        </div>
+        <div class="kpi-divider"></div>
+        <div class="kpi">
+          <div class="kpi-val" id="kpi-winrate">0%</div>
+          <div class="kpi-key">win rate</div>
+        </div>
+        <div class="kpi-divider"></div>
+        <div class="kpi">
+          <div class="kpi-val" id="kpi-active">0</div>
+          <div class="kpi-key">active bots</div>
+        </div>
+      </div>
+
+      <!-- P&L sparkline chart -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">cumulative p&amp;l</span>
+          <div class="filter-tabs">
+            <button class="tab active" onclick="setStrategyFilter('all', this)">all</button>
+            <button class="tab" onclick="setStrategyFilter('macd', this)">macd</button>
+            <button class="tab" onclick="setStrategyFilter('rsi', this)">rsi</button>
+            <button class="tab" onclick="setStrategyFilter('cvd', this)">cvd</button>
+          </div>
+        </div>
+        <canvas id="pnl-chart" height="140"></canvas>
+      </div>
+
+      <!-- Trade log -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">trade log</span>
+          <button class="refresh-btn" onclick="loadAll()">↻ refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table class="trade-table">
+            <thead>
+              <tr>
+                <th>time</th>
+                <th>strategy</th>
+                <th>market</th>
+                <th>side</th>
+                <th>price</th>
+                <th>size</th>
+                <th>filled</th>
+                <th>p&amp;l</th>
+              </tr>
+            </thead>
+            <tbody id="trade-tbody">
+              <tr><td colspan="8" class="loading-row">loading trades...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Right panel: live market feed -->
+    <aside class="market-panel">
+      <div class="section-label">live markets</div>
+      <div id="market-list" class="market-list">
+        <div class="market-loading">fetching markets...</div>
+      </div>
+    </aside>
+
+  </main>
+
+  <!-- Toast notifications -->
+  <div id="toast-container"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="src/services/api.js"></script>
+  <script src="src/components/chart.js"></script>
+  <script src="src/components/bots.js"></script>
+  <script src="src/components/trades.js"></script>
+  <script src="src/components/markets.js"></script>
+  <script src="src/components/toast.js"></script>
+  <script src="src/app.js"></script>
+</body>
+</html>
