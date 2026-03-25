@@ -1,96 +1,102 @@
 # Kalshi Algorithmic Trading Bot
 
-A full-stack algorithmic trading system that places real limit orders on [Kalshi](https://kalshi.com) — a CFTC-regulated US prediction market exchange. Built in Python and vanilla JavaScript.
+A full-stack algorithmic trading system that places real limit orders on [Kalshi](https://kalshi.com) — a CFTC-regulated US prediction market exchange. Built in Python and vanilla JavaScript over two days as a learning project to expand beyond a JavaScript/TypeScript background.
 
-![Dashboard Screenshot](dashboard/screenshot.png)
+![Dashboard](dashboard/screenshot.png)
+
+## Live results
+
+- **+$3.86 profit** on first day of live trading
+- **11 trades** placed and tracked automatically
+- Running 24/7 on a MacBook, making real trades on a regulated exchange
 
 ## What it does
 
-- Fetches live candlestick price data from Kalshi's API every 60 seconds
-- Runs a MACD crossover strategy to generate BUY/SELL signals
-- Places real limit orders automatically via the Kalshi API
-- Tracks all trades and P&L in a local SQLite database
-- Displays everything on a live dashboard with a P&L chart, trade log, and bot controls
+Every 60 seconds the bot:
 
-## Why I built it
+1. Fetches Bitcoin's real-time price from Kraken
+2. Calculates hourly momentum using linear regression on 5-minute candles
+3. Auto-selects the best Kalshi BTC market based on current price and momentum direction
+4. Places a limit order if momentum exceeds the minimum threshold
+5. Tracks fills and calculates P&L automatically
 
-I wanted to expand beyond my JavaScript background and learn Python, async programming, and data pipelines — so I picked a project that would force me to use all three at once. The bot has placed real trades on Kalshi and is running live.
+The strategy: Bitcoin daily markets on Kalshi price the probability that BTC will be above a threshold at settlement. If BTC has strong downward momentum, the bot sells YES contracts on markets where BTC is above the threshold — collecting premium on contracts likely to resolve NO.
 
 ## Tech stack
 
-| Layer | Technology |
-|-------|-----------|
-| Backend | Python, FastAPI, SQLAlchemy, aiosqlite |
-| Trading | Kalshi Python async SDK, pandas |
-| Frontend | Vanilla JS, Chart.js, HTML/CSS |
-| Database | SQLite |
+| Layer | Technology | Why |
+|-------|-----------|-----|
+| Backend | Python, FastAPI | Async-first, automatic API docs, clean DI system |
+| Scheduler | asyncio | Concurrent bot loops without threading complexity |
+| Database | SQLite + SQLAlchemy | Zero-config local persistence, async ORM |
+| Trading | Kalshi Python async SDK | Official CFTC-regulated exchange API |
+| Market data | ccxt (Kraken) | Real-time BTC price and OHLCV candles |
+| Frontend | Vanilla JS, Chart.js | No build step, fast to iterate |
 
 ## Project structure
 
 ```
 kalshi-trading-bot/
 ├── backend/
-│   ├── main.py                      # FastAPI app entry point
+│   ├── main.py                          # FastAPI app + lifespan management
 │   ├── app/
 │   │   ├── bots/
-│   │   │   ├── indicators.py        # MACD, RSI, VWAP (pure pandas)
-│   │   │   └── macd_strategy.py     # MACD crossover strategy
+│   │   │   ├── btc_threshold_strategy.py  # Core trading strategy
+│   │   │   ├── macd_strategy.py           # MACD signal generation
+│   │   │   └── indicators.py              # Pure pandas: MACD, RSI, VWAP
 │   │   ├── models/
-│   │   │   ├── database.py          # SQLAlchemy table definitions
-│   │   │   └── db.py                # DB connection + session management
+│   │   │   ├── database.py                # SQLAlchemy table definitions
+│   │   │   └── db.py                      # Async engine + session management
 │   │   ├── routes/
-│   │   │   ├── trades.py            # Trade history endpoints
-│   │   │   ├── bots.py              # Bot control endpoints
-│   │   │   └── market.py            # Kalshi market data endpoints
+│   │   │   ├── trades.py                  # Trade history + P&L endpoints
+│   │   │   ├── bots.py                    # Bot start/stop controls
+│   │   │   └── market.py                  # Live Kalshi market data
 │   │   └── services/
-│   │       ├── scheduler.py         # Bot execution loop (asyncio)
-│   │       └── trader.py            # Kalshi order placement
+│   │       ├── scheduler.py               # Bot execution loops (asyncio)
+│   │       ├── trader.py                  # Kalshi order placement
+│   │       ├── fill_tracker.py            # Polls for fills + settlements
+│   │       └── position_manager.py        # Prevents duplicate orders
 │   └── tests/
 │       └── test_macd_strategy.py
 └── dashboard/
     ├── index.html
     └── src/
-        ├── components/              # Chart, trade table, bot cards
-        └── services/api.js          # All backend API calls
+        ├── components/                    # Chart, trade table, bot cards
+        └── services/api.js               # All backend API calls
 ```
 
-## How the bot works
+## Setup
 
-```
-Every 60 seconds:
-  1. Fetch candlestick data from Kalshi API
-  2. Run MACD crossover strategy on price history
-  3. If BUY/SELL signal: place limit order via Kalshi API
-  4. Log trade to SQLite database
-  5. Dashboard updates automatically
-```
+**Requirements:** Python 3.13+, a Kalshi account with API credentials
 
-## Running locally
-
-**Backend**
 ```bash
+# Backend
 cd backend
-python -m venv venv
+python3.13 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 pip install greenlet kalshi_python_async
+
+# Configure
 cp .env.example .env
-# Add your Kalshi API key and private key path to .env
+# Add your Kalshi API key ID and private key path
+
+# Run
 uvicorn main:app --reload
 ```
 
-**Dashboard**
 ```bash
+# Dashboard (separate terminal)
 cd dashboard
-python -m http.server 5500
+python3.13 -m http.server 5500
 # Open http://localhost:5500
 ```
 
-**API docs** available at `http://localhost:8000/docs`
+Interactive API docs at `http://localhost:8000/docs`
 
 ## Environment variables
 
-```
+```env
 KALSHI_API_KEY_ID=your-api-key-id
 KALSHI_PRIVATE_KEY_PATH=./kalshi_private_key.pem
 KALSHI_HOST=https://api.elections.kalshi.com/trade-api/v2
@@ -105,13 +111,24 @@ Set `DRY_RUN=false` to place real orders.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /api/trades | Trade history |
-| GET | /api/trades/summary | P&L summary |
-| GET | /api/bots | Bot status |
-| POST | /api/bots/start | Start a bot |
-| POST | /api/bots/stop/{strategy} | Stop a bot |
-| GET | /api/market/events | Live Kalshi markets |
+| GET | `/api/trades` | Trade history, filterable by strategy |
+| GET | `/api/trades/summary` | Aggregate P&L and win rate |
+| GET | `/api/bots` | Bot status and statistics |
+| POST | `/api/bots/start` | Start a bot with position size |
+| POST | `/api/bots/stop/{strategy}` | Stop a running bot |
+| GET | `/api/market/events` | Live Kalshi markets |
+
+## What I learned
+
+This project was built to expand beyond a JavaScript/TypeScript background. Key things learned:
+
+- Python async/await patterns vs JavaScript (similar concepts, different ecosystem)
+- SQLAlchemy async ORM (vs Mongoose in Node)
+- FastAPI dependency injection (vs Express middleware)
+- pandas for time-series data manipulation
+- Real-world API integration with authentication, rate limiting, and error handling
+- Running a live system with real money on the line
 
 ## Author
 
-William McDermott — [github.com/william-mcdermott](https://github.com/william-mcdermott)
+William McDermott · [github.com/william-mcdermott](https://github.com/william-mcdermott) · [w.e.mcdermott@gmail.com](mailto:w.e.mcdermott@gmail.com)
