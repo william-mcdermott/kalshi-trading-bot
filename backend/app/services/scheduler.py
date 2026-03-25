@@ -15,8 +15,6 @@ TICK_INTERVAL  = 60
 SERIES_TICKER  = "KXBTCD"
 MARKET_REFRESH = 900
 SYNC_INTERVAL  = 120
-
-# Settlement arb kicks in this many hours before 5pm EDT (21:00 UTC)
 ARB_WINDOW_HOURS = 6.0
 
 logging.basicConfig(
@@ -43,11 +41,10 @@ def get_client():
 
 
 def hours_to_settlement() -> float:
-    """Returns hours until next 5pm EDT (21:00 UTC) settlement."""
-    now              = datetime.now(timezone.utc)
-    settlement       = now.replace(hour=21, minute=0, second=0, microsecond=0)
+    now        = datetime.now(timezone.utc)
+    settlement = now.replace(hour=21, minute=0, second=0, microsecond=0)
     if now >= settlement:
-        settlement   = settlement.replace(day=settlement.day + 1)
+        settlement = settlement.replace(day=settlement.day + 1)
     return (settlement - now).total_seconds() / 3600
 
 
@@ -82,19 +79,22 @@ async def run_bot(strategy_name: str, client, market_ticker: str, hours_left: fl
             log.debug(f"{strategy_name}: not running, skipping")
             return
 
-        # Choose strategy based on time to settlement
+        # ── ONE position at a time across ALL markets ─────────────────────
+        if position_manager.has_any_open_position():
+            open_tickers = [t for t in position_manager._open_positions.keys()]
+            log.info(f"{strategy_name}: open position(s) on {open_tickers} — skipping")
+            return
+
+        # ── Choose strategy based on time to settlement ───────────────────
         if hours_left <= ARB_WINDOW_HOURS:
-            # Settlement arbitrage — scan all markets for mispricing
             log.info(f"{strategy_name}: using settlement arb ({hours_left:.1f}hrs to settlement)")
-            signal = await find_best_opportunity(hours_left)
+            signal        = await find_best_opportunity(hours_left)
             active_ticker = signal.market_ticker if signal.market_ticker else market_ticker
         else:
-            # Momentum strategy — outside settlement window
             log.info(f"{strategy_name}: using momentum strategy ({hours_left:.1f}hrs to settlement)")
             contract_price = await get_contract_price(client, market_ticker)
             from app.bots.btc_threshold_strategy import generate_signal
             raw_signal     = generate_signal(market_ticker, contract_price)
-            # Convert to settlement arb Signal format
             from app.bots.settlement_arb_strategy import Signal as ArbSignal
             signal = ArbSignal(
                 action        = raw_signal.action,
@@ -112,23 +112,18 @@ async def run_bot(strategy_name: str, client, market_ticker: str, hours_left: fl
         if signal.action == "HOLD" or not active_ticker:
             return
 
-        if position_manager.has_open_position(active_ticker):
-            existing = position_manager.get_open_position(active_ticker)
-            log.info(f"{strategy_name}: already have open {existing.side} on {active_ticker} — skipping")
-            return
-
         order_result = await place_order(signal, active_ticker, bot.position_size)
 
         trade = Trade(
-            strategy=strategy_name,
-            market_id=active_ticker,
-            side=signal.action,
-            price=signal.price,
-            size=bot.position_size,
-            filled=False,
-            pnl=0.0,
-            order_id=order_result.order_id,
-            created_at=datetime.now(timezone.utc),
+            strategy   = strategy_name,
+            market_id  = active_ticker,
+            side       = signal.action,
+            price      = signal.price,
+            size       = bot.position_size,
+            filled     = False,
+            pnl        = 0.0,
+            order_id   = order_result.order_id,
+            created_at = datetime.now(timezone.utc),
         )
         db.add(trade)
         bot.total_trades += 1

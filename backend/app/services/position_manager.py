@@ -3,7 +3,8 @@
 # Tracks open positions and prevents duplicate orders on the same market.
 # Before placing any order, the scheduler checks here first.
 #
-# Think of this like a mutex — only one open position per market at a time.
+# ONE open position at a time across ALL markets.
+# Think of this like a mutex — only one trade in flight at a time.
 
 import logging
 from datetime import datetime, timezone, timedelta
@@ -14,18 +15,13 @@ from app.models.database import Trade
 
 log = logging.getLogger(__name__)
 
-# How long to wait before cancelling a stale unfilled order (minutes)
 STALE_ORDER_MINUTES = 30
 
 
 class PositionManager:
-    """
-    Manages open positions per market.
-    Keeps an in-memory cache of open positions, backed by the database.
-    """
 
     def __init__(self):
-        # market_ticker -> Trade (the open position)
+        # market_ticker -> Trade
         self._open_positions: dict[str, Trade] = {}
 
     async def load_from_db(self):
@@ -44,13 +40,19 @@ class PositionManager:
             if trades:
                 log.info(f"Loaded {len(trades)} open positions from database")
 
+    def has_any_open_position(self) -> bool:
+        """Returns True if we have ANY open position on any market."""
+        return len(self._open_positions) > 0
+
     def has_open_position(self, market_ticker: str) -> bool:
-        """Returns True if we already have an unfilled order on this market."""
+        """Returns True if we already have an unfilled order on this specific market."""
         return market_ticker in self._open_positions
 
     def get_open_position(self, market_ticker: str) -> Trade | None:
-        """Returns the open Trade for this market, or None."""
         return self._open_positions.get(market_ticker)
+
+    def all_open_positions(self) -> list[Trade]:
+        return list(self._open_positions.values())
 
     def record_order(self, trade: Trade):
         """Called after placing an order — records it as an open position."""
@@ -75,7 +77,7 @@ class PositionManager:
         stale_cutoff = datetime.now(timezone.utc) - timedelta(minutes=STALE_ORDER_MINUTES)
         to_close     = []
 
-        for market_ticker, trade in self._open_positions.items():
+        for market_ticker, trade in list(self._open_positions.items()):
             if not trade.order_id or trade.order_id == "dry_run_order":
                 continue
 
@@ -89,7 +91,7 @@ class PositionManager:
                     log.info(f"Position filled/cancelled: {market_ticker} — closing")
                     to_close.append(market_ticker)
 
-                elif trade.created_at and trade.created_at.replace(tzinfo=timezone.utc) < stale_cutoff:                    # Order has been sitting too long — cancel it
+                elif trade.created_at and trade.created_at.replace(tzinfo=timezone.utc) < stale_cutoff:
                     log.warning(f"Stale order on {market_ticker} — cancelling")
                     try:
                         await client.cancel_order(order_id=trade.order_id)
@@ -104,5 +106,4 @@ class PositionManager:
             self.close_position(market_ticker)
 
 
-# Global singleton — shared across the whole app
 position_manager = PositionManager()
