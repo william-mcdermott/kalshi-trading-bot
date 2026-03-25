@@ -108,8 +108,13 @@ async def bot_loop(strategy_name: str, client):
         try:
             # Re-pick the best market every 15 minutes
             if time.time() - last_market_pick > MARKET_REFRESH or market_ticker is None:
-                market_ticker, _ = await find_best_market(client)
-                last_market_pick = time.time()
+                try:
+                    market_ticker, _ = await find_best_market(client)
+                    last_market_pick = time.time()
+                except ValueError as e:
+                    log.warning(f"{strategy_name}: no valid market available — {e}. Waiting 5 minutes.")
+                    await asyncio.sleep(300)
+                    continue
 
             await run_bot(strategy_name, client, market_ticker)
 
