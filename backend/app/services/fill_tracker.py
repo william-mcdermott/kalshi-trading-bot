@@ -103,7 +103,10 @@ async def check_settlements(client):
                 fills = await client.get_fills(order_id=trade.order_id)
 
                 total_payout = sum(
-                    float(f.yes_price) / 100 * float(f.count)
+                    float(getattr(f, 'yes_price_dollars', None) or 
+                        getattr(f, 'yes_price', None) or 0)
+                    * float(getattr(f, 'count', None) or 
+                            getattr(f, 'count_fp', 1) or 1)
                     for f in (fills.fills or [])
                 )
                 total_cost = abs(trade.pnl)  # stored as negative cost earlier

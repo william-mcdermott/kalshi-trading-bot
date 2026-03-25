@@ -7,11 +7,13 @@ from sqlalchemy import select
 from app.models.db import SessionLocal, init_db
 from app.models.database import BotStatus, Trade
 from app.services.trader import place_order
+from app.services.position_manager import position_manager
 from app.bots.btc_threshold_strategy import generate_signal as btc_signal, find_best_market
 
-TICK_INTERVAL    = 60
-SERIES_TICKER    = "KXBTCD"
-MARKET_REFRESH   = 900  # re-pick best market every 15 minutes
+TICK_INTERVAL  = 60
+SERIES_TICKER  = "KXBTCD"
+MARKET_REFRESH = 900   # re-pick market every 15 minutes
+SYNC_INTERVAL  = 120   # sync positions with Kalshi every 2 minutes
 
 logging.basicConfig(
     level=logging.INFO,
@@ -71,6 +73,12 @@ async def run_bot(strategy_name: str, client, market_ticker: str):
             log.debug(f"{strategy_name}: not running, skipping")
             return
 
+        # Check if we already have an open position on this market
+        if position_manager.has_open_position(market_ticker):
+            existing = position_manager.get_open_position(market_ticker)
+            log.info(f"{strategy_name}: already have open {existing.side} on {market_ticker} — skipping")
+            return
+
         contract_price = await get_contract_price(client, market_ticker)
         signal         = btc_signal(market_ticker, contract_price)
         log.info(f"{strategy_name}: {signal.action}  confidence={signal.confidence:.2f}  reason={signal.reason}")
@@ -95,6 +103,9 @@ async def run_bot(strategy_name: str, client, market_ticker: str):
         bot.total_trades += 1
         bot.updated_at    = datetime.now(timezone.utc)
         await db.commit()
+
+        # Register the position so we don't double-trade
+        position_manager.record_order(trade)
         log.info(f"{strategy_name}: logged {signal.action} — order_id={order_result.order_id}")
 
 
@@ -103,16 +114,22 @@ async def bot_loop(strategy_name: str, client):
 
     market_ticker    = None
     last_market_pick = 0
+    last_sync        = 0
 
     while True:
         try:
+            # Sync positions with Kalshi every 2 minutes
+            if time.time() - last_sync > SYNC_INTERVAL:
+                await position_manager.sync_with_kalshi(client)
+                last_sync = time.time()
+
             # Re-pick the best market every 15 minutes
             if time.time() - last_market_pick > MARKET_REFRESH or market_ticker is None:
                 try:
                     market_ticker, _ = await find_best_market(client)
                     last_market_pick = time.time()
                 except ValueError as e:
-                    log.warning(f"{strategy_name}: no valid market available — {e}. Waiting 5 minutes.")
+                    log.warning(f"{strategy_name}: no valid market — {e}. Waiting 5 minutes.")
                     await asyncio.sleep(300)
                     continue
 
@@ -127,5 +144,9 @@ async def bot_loop(strategy_name: str, client):
 async def run_scheduler():
     await init_db()
     client = get_client()
-    log.info("Scheduler started — auto-selecting best KXBTCD market")
+
+    # Load any existing open positions from DB on startup
+    await position_manager.load_from_db()
+
+    log.info("Scheduler started with position manager")
     await asyncio.gather(*[bot_loop(name, client) for name in STRATEGIES])
