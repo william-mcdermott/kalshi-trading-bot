@@ -131,7 +131,14 @@ async def run_bot(strategy_name: str, client, market_ticker: str, hours_left: fl
         await db.commit()
 
         position_manager.record_order(trade)
+
+        from app.services.alerter import alert_trade_placed
+        await alert_trade_placed(signal.action, active_ticker, signal.price, bot.position_size)
+
         log.info(f"{strategy_name}: logged {signal.action} — order_id={order_result.order_id}")
+        # iMessage alert
+        from app.services.alerter import alert_trade_placed
+        await alert_trade_placed(signal.action, active_ticker, signal.price, bot.position_size)
 
 
 async def bot_loop(strategy_name: str, client):

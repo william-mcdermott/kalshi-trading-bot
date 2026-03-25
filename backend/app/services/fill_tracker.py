@@ -61,7 +61,7 @@ async def check_settlements(client):
         result = await db.execute(
             select(Trade).where(
                 Trade.filled == True,
-                Trade.pnl < 0,          # cost stored as negative — not yet settled
+                Trade.pnl < 0,
                 Trade.order_id != None,
                 Trade.order_id != "dry_run_order",
             )
@@ -76,10 +76,8 @@ async def check_settlements(client):
                 fills = await client.get_fills(order_id=trade.order_id)
                 fill_list = fills.fills or []
 
-                # Sum up payout from fills
                 total_payout = 0.0
                 for f in fill_list:
-                    # Try multiple field names — Kalshi SDK field names vary
                     for attr in ['payout_dollars', 'settlement_payout_dollars',
                                  'yes_price_dollars', 'no_price_dollars']:
                         val = getattr(f, attr, None)
@@ -92,28 +90,31 @@ async def check_settlements(client):
                 total_cost = abs(trade.pnl)
 
                 if total_payout > 0:
-                    # Market settled with a payout
                     trade.pnl = total_payout - total_cost
                     log.info(
                         f"Settlement — order {trade.order_id[:8]}... "
                         f"payout=${total_payout:.4f} cost=${total_cost:.4f} "
                         f"pnl=${trade.pnl:.4f}"
                     )
+                    from app.services.alerter import alert_trade_settled
+                    await alert_trade_settled(trade.side, trade.market_id, trade.pnl)
+
                 else:
-                    # Check if market has resolved by looking at order status
                     try:
                         response = await client.get_order(order_id=trade.order_id)
                         order    = response.order
                         status   = str(order.status).lower()
 
                         if "settled" in status or "expired" in status:
-                            # Market resolved NO for our position (no payout)
                             trade.pnl = -total_cost
                             log.info(
                                 f"Settlement — order {trade.order_id[:8]}... "
                                 f"payout=$0.0000 cost=${total_cost:.4f} "
                                 f"pnl=${trade.pnl:.4f}"
                             )
+                            from app.services.alerter import alert_trade_settled
+                            await alert_trade_settled(trade.side, trade.market_id, trade.pnl)
+
                     except Exception:
                         pass
 
