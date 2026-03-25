@@ -131,4 +131,4 @@ This project was built to expand beyond a JavaScript/TypeScript background. Key 
 
 ## Author
 
-William McDermott · [github.com/william-mcdermott](https://github.com/william-mcdermott) · [w.e.mcdermott@gmail.com](mailto:w.e.mcdermott@gmail.com)
+William McDermott · [github.com/william-mcdermott](https://github.com/william-mcdermott)
