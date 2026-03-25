@@ -8,12 +8,16 @@ from app.models.db import SessionLocal, init_db
 from app.models.database import BotStatus, Trade
 from app.services.trader import place_order
 from app.services.position_manager import position_manager
-from app.bots.btc_threshold_strategy import generate_signal as btc_signal, find_best_market
+from app.bots.btc_threshold_strategy import generate_signal as momentum_signal, find_best_market
+from app.bots.settlement_arb_strategy import find_best_opportunity
 
 TICK_INTERVAL  = 60
 SERIES_TICKER  = "KXBTCD"
-MARKET_REFRESH = 900   # re-pick market every 15 minutes
-SYNC_INTERVAL  = 120   # sync positions with Kalshi every 2 minutes
+MARKET_REFRESH = 900
+SYNC_INTERVAL  = 120
+
+# Settlement arb kicks in this many hours before 5pm EDT (21:00 UTC)
+ARB_WINDOW_HOURS = 6.0
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,8 +42,16 @@ def get_client():
     return KalshiClient(config)
 
 
+def hours_to_settlement() -> float:
+    """Returns hours until next 5pm EDT (21:00 UTC) settlement."""
+    now              = datetime.now(timezone.utc)
+    settlement       = now.replace(hour=21, minute=0, second=0, microsecond=0)
+    if now >= settlement:
+        settlement   = settlement.replace(day=settlement.day + 1)
+    return (settlement - now).total_seconds() / 3600
+
+
 async def get_contract_price(client, ticker: str) -> float:
-    """Fetches current YES ask price for a market from Kalshi."""
     try:
         now    = int(time.time())
         result = await client.get_market_candlesticks(
@@ -52,17 +64,14 @@ async def get_contract_price(client, ticker: str) -> float:
         candles = [c for c in (result.candlesticks or [])
                    if c.yes_ask.close_dollars and c.yes_ask.close_dollars != '0.0000']
         if not candles:
-            log.warning(f"No candle data for {ticker}, using fallback 0.5")
             return 0.5
-        price = float(candles[-1].yes_ask.close_dollars)
-        log.info(f"Contract price: {price:.4f}")
-        return price
+        return float(candles[-1].yes_ask.close_dollars)
     except Exception as e:
         log.error(f"Failed to fetch contract price: {e}")
         return 0.5
 
 
-async def run_bot(strategy_name: str, client, market_ticker: str):
+async def run_bot(strategy_name: str, client, market_ticker: str, hours_left: float):
     async with SessionLocal() as db:
         result = await db.execute(
             select(BotStatus).where(BotStatus.strategy == strategy_name)
@@ -73,24 +82,46 @@ async def run_bot(strategy_name: str, client, market_ticker: str):
             log.debug(f"{strategy_name}: not running, skipping")
             return
 
-        # Check if we already have an open position on this market
-        if position_manager.has_open_position(market_ticker):
-            existing = position_manager.get_open_position(market_ticker)
-            log.info(f"{strategy_name}: already have open {existing.side} on {market_ticker} — skipping")
-            return
+        # Choose strategy based on time to settlement
+        if hours_left <= ARB_WINDOW_HOURS:
+            # Settlement arbitrage — scan all markets for mispricing
+            log.info(f"{strategy_name}: using settlement arb ({hours_left:.1f}hrs to settlement)")
+            signal = await find_best_opportunity(hours_left)
+            active_ticker = signal.market_ticker if signal.market_ticker else market_ticker
+        else:
+            # Momentum strategy — outside settlement window
+            log.info(f"{strategy_name}: using momentum strategy ({hours_left:.1f}hrs to settlement)")
+            contract_price = await get_contract_price(client, market_ticker)
+            from app.bots.btc_threshold_strategy import generate_signal
+            raw_signal     = generate_signal(market_ticker, contract_price)
+            # Convert to settlement arb Signal format
+            from app.bots.settlement_arb_strategy import Signal as ArbSignal
+            signal = ArbSignal(
+                action        = raw_signal.action,
+                price         = raw_signal.price,
+                fair_value    = raw_signal.price,
+                edge          = 0,
+                confidence    = raw_signal.confidence,
+                reason        = raw_signal.reason,
+                market_ticker = market_ticker,
+            )
+            active_ticker = market_ticker
 
-        contract_price = await get_contract_price(client, market_ticker)
-        signal         = btc_signal(market_ticker, contract_price)
         log.info(f"{strategy_name}: {signal.action}  confidence={signal.confidence:.2f}  reason={signal.reason}")
 
-        if signal.action == "HOLD":
+        if signal.action == "HOLD" or not active_ticker:
             return
 
-        order_result = await place_order(signal, market_ticker, bot.position_size)
+        if position_manager.has_open_position(active_ticker):
+            existing = position_manager.get_open_position(active_ticker)
+            log.info(f"{strategy_name}: already have open {existing.side} on {active_ticker} — skipping")
+            return
+
+        order_result = await place_order(signal, active_ticker, bot.position_size)
 
         trade = Trade(
             strategy=strategy_name,
-            market_id=market_ticker,
+            market_id=active_ticker,
             side=signal.action,
             price=signal.price,
             size=bot.position_size,
@@ -104,7 +135,6 @@ async def run_bot(strategy_name: str, client, market_ticker: str):
         bot.updated_at    = datetime.now(timezone.utc)
         await db.commit()
 
-        # Register the position so we don't double-trade
         position_manager.record_order(trade)
         log.info(f"{strategy_name}: logged {signal.action} — order_id={order_result.order_id}")
 
@@ -118,12 +148,12 @@ async def bot_loop(strategy_name: str, client):
 
     while True:
         try:
-            # Sync positions with Kalshi every 2 minutes
             if time.time() - last_sync > SYNC_INTERVAL:
                 await position_manager.sync_with_kalshi(client)
                 last_sync = time.time()
 
-            # Re-pick the best market every 15 minutes
+            hours_left = hours_to_settlement()
+
             if time.time() - last_market_pick > MARKET_REFRESH or market_ticker is None:
                 try:
                     market_ticker, _ = await find_best_market(client)
@@ -133,7 +163,7 @@ async def bot_loop(strategy_name: str, client):
                     await asyncio.sleep(300)
                     continue
 
-            await run_bot(strategy_name, client, market_ticker)
+            await run_bot(strategy_name, client, market_ticker, hours_left)
 
         except Exception as e:
             log.error(f"{strategy_name}: error — {e}")
@@ -144,9 +174,6 @@ async def bot_loop(strategy_name: str, client):
 async def run_scheduler():
     await init_db()
     client = get_client()
-
-    # Load any existing open positions from DB on startup
     await position_manager.load_from_db()
-
-    log.info("Scheduler started with position manager")
+    log.info("Scheduler started — momentum + settlement arb strategy")
     await asyncio.gather(*[bot_loop(name, client) for name in STRATEGIES])
