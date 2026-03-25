@@ -19,6 +19,7 @@ import logging
 import statistics
 from dataclasses import dataclass
 from typing import Optional
+from app.bots.btc_threshold_strategy import fetch_btc_history, calculate_momentum
 
 import ccxt
 import httpx
@@ -135,23 +136,23 @@ async def scan_markets(hours_to_settlement: float) -> list[dict]:
 async def find_best_opportunity(hours_to_settlement: float) -> Optional[Signal]:
     """
     Scans all markets and returns the best mispricing opportunity.
-
-    Only considers markets in the settlement window and with
-    edge above the minimum threshold.
+    Adds directional filter — only trades WITH momentum direction.
     """
     if hours_to_settlement > MAX_HOURS_TO_SETTLEMENT:
         return Signal(
-            action="HOLD",
-            price=0,
-            fair_value=0,
-            edge=0,
-            confidence=0,
-            reason=f"Too early — {hours_to_settlement:.1f}hrs to settlement (max {MAX_HOURS_TO_SETTLEMENT}hrs)",
+            action="HOLD", price=0, fair_value=0, edge=0, confidence=0,
+            reason=f"Too early — {hours_to_settlement:.1f}hrs to settlement",
             market_ticker="",
         )
 
-    btc_price = fetch_btc_price()
-    markets   = await scan_markets(hours_to_settlement)
+    # Get BTC price and momentum
+    prices    = fetch_btc_history(12)
+    btc_price = prices[-1]
+    momentum  = calculate_momentum(prices)
+
+    log.info(f"Settlement arb scan — BTC=${btc_price:,.2f} momentum={momentum:+.2f}%/hr")
+
+    markets = await scan_markets(hours_to_settlement)
 
     best_signal   = None
     best_abs_edge = 0.0
@@ -163,16 +164,19 @@ async def find_best_opportunity(hours_to_settlement: float) -> Optional[Signal]:
         if abs(edge) < MIN_EDGE:
             continue
 
-        confidence = min(abs(edge) / 0.30, 1.0)  # 30¢ edge = full confidence
+        # Directional filter — only trade WITH momentum
+        if edge > 0 and momentum < 0:
+            # Contract is underpriced (BUY YES) but BTC is falling — skip
+            log.debug(f"Skipping BUY on {m['ticker']} — bearish momentum ({momentum:+.2f}%/hr)")
+            continue
+        if edge < 0 and momentum > 0:
+            # Contract is overpriced (SELL YES) but BTC is rising — skip
+            log.debug(f"Skipping SELL on {m['ticker']} — bullish momentum ({momentum:+.2f}%/hr)")
+            continue
 
-        if edge > 0:
-            # Underpriced — BUY YES
-            action = "BUY"
-            price  = m["yes_ask"]  # pay the ask when buying
-        else:
-            # Overpriced — SELL YES
-            action = "SELL"
-            price  = m["yes_bid"]  # hit the bid when selling
+        confidence = min(abs(edge) / 0.30, 1.0)
+        action     = "BUY" if edge > 0 else "SELL"
+        price      = m["yes_ask"] if action == "BUY" else m["yes_bid"]
 
         signal = Signal(
             action        = action,
@@ -183,7 +187,7 @@ async def find_best_opportunity(hours_to_settlement: float) -> Optional[Signal]:
             reason        = (
                 f"{action} {m['ticker']} — "
                 f"market={m['mid']:.3f} fair={fv:.3f} edge={edge:+.3f} "
-                f"BTC=${btc_price:,.0f} threshold=${m['threshold']:,.0f}"
+                f"momentum={momentum:+.2f}%/hr"
             ),
             market_ticker = m["ticker"],
         )
@@ -194,14 +198,9 @@ async def find_best_opportunity(hours_to_settlement: float) -> Optional[Signal]:
 
     if best_signal is None:
         return Signal(
-            action="HOLD",
-            price=0,
-            fair_value=0,
-            edge=0,
-            confidence=0,
-            reason=f"No mispricing found above {MIN_EDGE:.0%} edge threshold",
+            action="HOLD", price=0, fair_value=0, edge=0, confidence=0,
+            reason=f"No opportunity found (edge>{MIN_EDGE:.0%}, aligned with momentum={momentum:+.2f}%/hr)",
             market_ticker="",
         )
 
-    log.info(f"Best opportunity: {best_signal.reason}")
     return best_signal
