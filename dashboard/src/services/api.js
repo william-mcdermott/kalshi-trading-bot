@@ -65,4 +65,10 @@ const api = {
     if (!res.ok) throw new Error(`Markets fetch failed: ${res.status}`);
     return res.json();
   },
+
+  async getChartData() {
+    const res = await fetch(`${API_BASE}/trades/chart`);
+    if (!res.ok) throw new Error(`Chart fetch failed: ${res.status}`);
+    return res.json();
+  },
 };

@@ -86,3 +86,36 @@ async def get_summary(db: AsyncSession = Depends(get_db)):
         "win_rate":     round(win_rate, 1),
         "by_strategy":  strategies,
     }
+
+@router.get("/chart")
+async def get_chart_data(db: AsyncSession = Depends(get_db)):
+    """
+    Returns cumulative P&L over time for the chart.
+    Only includes filled trades with non-zero P&L.
+    """
+    result = await db.execute(
+        select(Trade)
+        .where(Trade.filled == True)
+        .order_by(Trade.created_at)
+    )
+    trades = result.scalars().all()
+
+    cumulative = 0.0
+    points     = []
+
+    for t in trades:
+        if t.pnl is None:
+            continue
+        cumulative += t.pnl
+        points.append({
+            "time": t.created_at.isoformat() if t.created_at else None,
+            "pnl":  round(cumulative, 4),
+            "trade_pnl": round(t.pnl, 4),
+            "side": t.side,
+            "market": t.market_id,
+        })
+
+    return {
+        "points":   points,
+        "final_pnl": round(cumulative, 4),
+    }
