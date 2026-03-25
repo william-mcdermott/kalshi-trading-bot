@@ -60,7 +60,7 @@ async def find_directional_market(client, btc_price: float, bullish: bool) -> Op
 
     target = btc_price + TARGET_DISTANCE if bullish else btc_price - TARGET_DISTANCE
 
-    async with httpx.AsyncClient() as http:
+    async with httpx.AsyncClient(timeout=10.0) as http:
         r = await http.get(
             "https://api.elections.kalshi.com/trade-api/v2/markets",
             params={"limit": 100, "status": "open", "series_ticker": "KXBTCD"},

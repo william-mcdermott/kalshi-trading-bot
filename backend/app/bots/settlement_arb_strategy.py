@@ -97,7 +97,7 @@ async def scan_markets(hours_to_settlement: float) -> list[dict]:
     """
     Fetches all open KXBTCD markets and returns their current prices.
     """
-    async with httpx.AsyncClient() as http:
+    async with httpx.AsyncClient(timeout=10.0) as http:
         r = await http.get(
             "https://api.elections.kalshi.com/trade-api/v2/markets",
             params={"limit": 100, "status": "open", "series_ticker": "KXBTCD"},
