@@ -1,3 +1,4 @@
+# app/bots/settlement_arb_strategy.py
 import math
 import logging
 from dataclasses import dataclass
@@ -8,12 +9,13 @@ import httpx
 
 log = logging.getLogger(__name__)
 
-MIN_EDGE                = 0.12
+MIN_EDGE                = 0.08   # lowered from 0.12
 MAX_HOURS_TO_SETTLEMENT = 6.0
 MIN_CONTRACT_PRICE      = 0.05
 MAX_CONTRACT_PRICE      = 0.95
 BTC_VOLATILITY_PCT      = 2.5
 MIN_DAILY_RANGE         = 1000.0
+MOMENTUM_BLOCK          = 0.3    # only block if momentum > 0.3%/hr against trade
 
 
 @dataclass
@@ -104,7 +106,7 @@ async def scan_markets(hours_to_settlement: float) -> list[dict]:
     return result
 
 
-async def find_best_opportunity(hours_to_settlement: float) -> Optional[Signal]:
+async def find_best_opportunity(hours_to_settlement: float) -> Signal:
     if hours_to_settlement > MAX_HOURS_TO_SETTLEMENT:
         return Signal(
             action="HOLD", price=0, fair_value=0, edge=0, confidence=0,
@@ -112,12 +114,11 @@ async def find_best_opportunity(hours_to_settlement: float) -> Optional[Signal]:
             market_ticker="",
         )
 
-    # Volatility filter
     daily_range = fetch_daily_range()
     if daily_range < MIN_DAILY_RANGE:
         return Signal(
             action="HOLD", price=0, fair_value=0, edge=0, confidence=0,
-            reason=f"Low volatility day (range=${daily_range:,.0f} — need >${MIN_DAILY_RANGE:,.0f})",
+            reason=f"Low volatility (range=${daily_range:,.0f} — need >${MIN_DAILY_RANGE:,.0f})",
             market_ticker="",
         )
 
@@ -126,7 +127,7 @@ async def find_best_opportunity(hours_to_settlement: float) -> Optional[Signal]:
     btc_price = prices[-1]
     momentum  = calculate_momentum(prices)
 
-    log.info(f"Settlement arb scan — BTC=${btc_price:,.2f} momentum={momentum:+.2f}%/hr range=${daily_range:,.0f}")
+    log.info(f"Arb scan — BTC=${btc_price:,.2f} momentum={momentum:+.2f}%/hr range=${daily_range:,.0f}")
 
     markets = await scan_markets(hours_to_settlement)
 
@@ -140,15 +141,17 @@ async def find_best_opportunity(hours_to_settlement: float) -> Optional[Signal]:
         if abs(edge) < MIN_EDGE:
             continue
 
-        # Directional filter
-        if edge > 0:
+        # Directional filter — only block strong opposing momentum
+        if edge > 0 and momentum < -MOMENTUM_BLOCK:
+            # Underpriced YES but momentum strongly bearish — skip
             continue
-        if edge < 0 and momentum > 0:
+        if edge < 0 and momentum > MOMENTUM_BLOCK:
+            # Overpriced YES but momentum strongly bullish — skip
             continue
 
-        confidence = min(abs(edge) / 0.30, 1.0)
         action     = "BUY" if edge > 0 else "SELL"
         price      = m["yes_ask"] if action == "BUY" else m["yes_bid"]
+        confidence = min(abs(edge) / 0.30, 1.0)
 
         signal = Signal(
             action        = action,
@@ -171,9 +174,9 @@ async def find_best_opportunity(hours_to_settlement: float) -> Optional[Signal]:
     if best_signal is None:
         return Signal(
             action="HOLD", price=0, fair_value=0, edge=0, confidence=0,
-            reason=f"No opportunity found (edge>{MIN_EDGE:.0%}, momentum aligned, range=${daily_range:,.0f})",
+            reason=f"No opportunity (edge>{MIN_EDGE:.0%}, range=${daily_range:,.0f}, mom={momentum:+.2f}%/hr)",
             market_ticker="",
         )
 
-    log.info(f"Best opportunity: {best_signal.reason}")
+    log.info(f"Best arb: {best_signal.reason}")
     return best_signal
