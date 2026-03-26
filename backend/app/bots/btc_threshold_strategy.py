@@ -7,17 +7,10 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
-TARGET_DISTANCE  = 800.0
-MIN_MOMENTUM_PCT = 0.3
-MAX_BUY_PRICE    = 0.40
-MIN_SELL_PRICE   = 0.15
-MIN_DAILY_RANGE  = 1000.0
-
-# RSI filter — only SELL when RSI > 55 (not oversold)
-RSI_PERIOD       = 14
-RSI_SELL_MIN     = 55   # don't sell into oversold conditions
-RSI_BUY_MAX      = 45   # don't buy into overbought conditions
-
+from app.config import config
+TARGET_DISTANCE = 800.0
+MAX_BUY_PRICE   = 0.40
+RSI_PERIOD      = 14
 
 @dataclass
 class Signal:
@@ -200,10 +193,10 @@ def generate_signal(market_ticker: str, contract_price: float) -> Signal:
     )
 
     daily_range = fetch_daily_range()
-    if daily_range < MIN_DAILY_RANGE:
+    if daily_range < config.min_daily_range:
         return Signal(
             action="HOLD", price=contract_price, confidence=0,
-            reason=f"Low volatility (range=${daily_range:,.0f} — need >${MIN_DAILY_RANGE:,.0f})",
+            reason=f"Low volatility (range=${daily_range:,.0f} — need >${config.min_daily_range:,.0f})",
         )
 
     if contract_price >= 0.95 or contract_price <= 0.05:
@@ -212,10 +205,10 @@ def generate_signal(market_ticker: str, contract_price: float) -> Signal:
             reason=f"Contract already resolved ({contract_price:.2f})",
         )
 
-    if abs_momentum < MIN_MOMENTUM_PCT:
+    if abs_momentum < config.min_momentum_pct:
         return Signal(
             action="HOLD", price=contract_price, confidence=0,
-            reason=f"Momentum too weak ({momentum:+.2f}%/hr — need >{MIN_MOMENTUM_PCT}%/hr)",
+            reason=f"Momentum too weak ({momentum:+.2f}%/hr — need >{config.min_momentum_pct}%/hr)",
         )
 
     confidence = min(abs_momentum / 2.0, 1.0)
@@ -228,12 +221,12 @@ def generate_signal(market_ticker: str, contract_price: float) -> Signal:
         )
     else:
         # SELL signal — confirm with RSI
-        if rsi < RSI_SELL_MIN:
+        if rsi < config.rsi_sell_min:
             return Signal(
                 action="HOLD", price=contract_price, confidence=0,
-                reason=f"Bearish momentum but RSI={rsi:.1f} too low (need >{RSI_SELL_MIN}) — may be oversold",
+                reason=f"Bearish momentum but RSI={rsi:.1f} too low (need >{config.rsi_sell_min}) — may be oversold",
             )
-        if contract_price < MIN_SELL_PRICE:
+        if contract_price < config.min_sell_price:
             return Signal(
                 action="HOLD", price=contract_price, confidence=0,
                 reason=f"Bearish but contract too cheap at {contract_price:.2f}",

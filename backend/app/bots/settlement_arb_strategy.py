@@ -9,13 +9,10 @@ import httpx
 
 log = logging.getLogger(__name__)
 
-MIN_EDGE                = 0.08   # lowered from 0.12
-MAX_HOURS_TO_SETTLEMENT = 6.0
+from app.config import config
 MIN_CONTRACT_PRICE      = 0.05
 MAX_CONTRACT_PRICE      = 0.95
 BTC_VOLATILITY_PCT      = 2.5
-MIN_DAILY_RANGE         = 1000.0
-MOMENTUM_BLOCK          = 0.3    # only block if momentum > 0.3%/hr against trade
 
 
 @dataclass
@@ -107,7 +104,7 @@ async def scan_markets(hours_to_settlement: float) -> list[dict]:
 
 
 async def find_best_opportunity(hours_to_settlement: float) -> Signal:
-    if hours_to_settlement > MAX_HOURS_TO_SETTLEMENT:
+    if hours_to_settlement > config.max_hours_to_settlement:
         return Signal(
             action="HOLD", price=0, fair_value=0, edge=0, confidence=0,
             reason=f"Too early — {hours_to_settlement:.1f}hrs to settlement",
@@ -115,10 +112,10 @@ async def find_best_opportunity(hours_to_settlement: float) -> Signal:
         )
 
     daily_range = fetch_daily_range()
-    if daily_range < MIN_DAILY_RANGE:
+    if daily_range < config.min_daily_range:
         return Signal(
             action="HOLD", price=0, fair_value=0, edge=0, confidence=0,
-            reason=f"Low volatility (range=${daily_range:,.0f} — need >${MIN_DAILY_RANGE:,.0f})",
+            reason=f"Low volatility (range=${daily_range:,.0f} — need >${config.min_daily_range:,.0f})",
             market_ticker="",
         )
 
@@ -138,14 +135,14 @@ async def find_best_opportunity(hours_to_settlement: float) -> Signal:
         fv   = fair_value(btc_price, m["threshold"], hours_to_settlement)
         edge = fv - m["mid"]
 
-        if abs(edge) < MIN_EDGE:
+        if abs(edge) < config.min_edge:
             continue
 
         # Directional filter — only block strong opposing momentum
-        if edge > 0 and momentum < -MOMENTUM_BLOCK:
+        if edge > 0 and momentum < -config.momentum_block:
             # Underpriced YES but momentum strongly bearish — skip
             continue
-        if edge < 0 and momentum > MOMENTUM_BLOCK:
+        if edge < 0 and momentum > config.momentum_block:
             # Overpriced YES but momentum strongly bullish — skip
             continue
 
@@ -174,7 +171,7 @@ async def find_best_opportunity(hours_to_settlement: float) -> Signal:
     if best_signal is None:
         return Signal(
             action="HOLD", price=0, fair_value=0, edge=0, confidence=0,
-            reason=f"No opportunity (edge>{MIN_EDGE:.0%}, range=${daily_range:,.0f}, mom={momentum:+.2f}%/hr)",
+            reason=f"No opportunity (edge>{config.min_edge:.0%}, range=${daily_range:,.0f}, mom={momentum:+.2f}%/hr)",
             market_ticker="",
         )
 
