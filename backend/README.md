@@ -1,111 +1,74 @@
-# Polymarket Bot — Backend
+# Backend
 
-A Python/FastAPI backend for running algorithmic trading bots on Polymarket.
-Built as a portfolio project to demonstrate Python, REST APIs, and data pipelines.
+FastAPI + SQLAlchemy async backend. Runs the bot, exposes the REST API, manages the database.
 
----
-
-## Stack
-
-| Layer        | Tool          | JS equivalent       |
-|--------------|---------------|---------------------|
-| Web framework| FastAPI       | Express             |
-| Server       | Uvicorn       | nodemon             |
-| Database     | SQLite        | MongoDB (local)     |
-| ORM          | SQLAlchemy    | Mongoose            |
-| Validation   | Pydantic      | Zod / Joi           |
-| HTTP client  | httpx         | axios               |
-| Data         | pandas        | —                   |
-| Indicators   | pandas-ta     | —                   |
-| Testing      | pytest        | Jest                |
-
----
-
-## Setup
-
+## Running
 ```bash
-# 1. Create a virtual environment (like node_modules but for Python)
-python -m venv venv
-
-# 2. Activate it
-source venv/bin/activate      # Mac/Linux
-venv\Scripts\activate         # Windows
-
-# 3. Install dependencies
+python3.13 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
-
-# 4. Copy and fill in environment variables
-cp .env.example .env
-# Edit .env with your Polymarket private key and wallet address
-
-# 5. Create the data directory
-mkdir -p data
-
-# 6. Seed fake data (for frontend development without real trades)
-python scripts/seed_fake_data.py
-
-# 7. Start the server
 uvicorn main:app --reload
 ```
 
-The server runs at http://localhost:8000
-
----
-
-## API Endpoints
-
-| Method | Path                        | Description                    |
-|--------|-----------------------------|--------------------------------|
-| GET    | /health                     | Health check                   |
-| GET    | /api/trades                 | All trades (supports ?strategy=macd) |
-| GET    | /api/trades/summary         | P&L summary across strategies  |
-| GET    | /api/bots                   | Status of all bots             |
-| POST   | /api/bots/start             | Start a bot                    |
-| POST   | /api/bots/stop/{strategy}   | Stop a bot                     |
-| GET    | /api/market/events          | Active Polymarket markets      |
-| GET    | /api/market/markets/{id}    | Single market details          |
-
-Interactive docs (like Swagger): http://localhost:8000/docs
-
----
-
-## Running Tests
-
+Keep awake overnight:
 ```bash
-pytest tests/ -v
+caffeinate -i uvicorn main:app --reload
 ```
 
----
-
-## Project Structure
-
-```
-polymarket-bot/
-├── main.py                  # App entry point
-├── requirements.txt
-├── .env.example
-├── app/
-│   ├── routes/
-│   │   ├── trades.py        # Trade history endpoints
-│   │   ├── bots.py          # Bot control endpoints
-│   │   └── market.py        # Polymarket data endpoints
-│   ├── models/
-│   │   ├── database.py      # SQLAlchemy table definitions
-│   │   └── db.py            # DB connection + session management
-│   └── bots/
-│       └── macd_strategy.py # MACD signal generation
-├── scripts/
-│   └── seed_fake_data.py    # Populates DB with fake trades
-├── tests/
-│   └── test_macd_strategy.py
-└── data/                    # SQLite database lives here (git-ignored)
+## Environment Variables
+```env
+KALSHI_API_KEY_ID=your-key-id
+KALSHI_PRIVATE_KEY_PATH=./kalshi_private_key.pem
+KALSHI_HOST=https://api.elections.kalshi.com/trade-api/v2
+DRY_RUN=true
+DATABASE_URL=sqlite+aiosqlite:///./data/bot.db
 ```
 
----
+Set `DRY_RUN=false` for live trading.
 
-## Next Steps
+## Key Files
 
-1. Build the Angular/React dashboard against `/api/trades` and `/api/bots`
-2. Add RSI and CVD strategies in `app/bots/`
-3. Wire up real Polymarket trading in a `app/services/trader.py`
-4. Add background task runner so bots execute on a schedule
+| File | Purpose |
+|------|---------|
+| `main.py` | App entry point, router registration, lifespan |
+| `app/config.py` | All tunable strategy params — edit at runtime via `/api/settings` |
+| `app/bots/btc_threshold_strategy.py` | Momentum + RSI signal generation |
+| `app/bots/settlement_arb_strategy.py` | Fair-value arb near settlement |
+| `app/services/scheduler.py` | 60s tick loop, strategy dispatch |
+| `app/services/fill_tracker.py` | Polls Kalshi for fills + settlement P&L |
+| `app/services/position_manager.py` | Global mutex — one position at a time |
+| `app/services/alerter.py` | iMessage alerts via osascript |
+| `backtesting/backtest.py` | Full backtest engine + 15-config parameter sweep |
+
+## Running the Backtest
+```bash
+python backtesting/backtest.py 30   # 30-day lookback
+python backtesting/analyze.py       # Analyze trade outcomes
+```
+
+Or hit `GET /api/backtest/run?days=30` from the dashboard.
+
+## Database
+
+SQLite at `data/bot.db`. To reset trade history:
+```bash
+python -c "
+import asyncio
+from app.models.db import SessionLocal, init_db
+from app.models.database import Trade
+from sqlalchemy import delete
+
+async def reset():
+    await init_db()
+    async with SessionLocal() as db:
+        await db.execute(delete(Trade))
+        await db.commit()
+        print('Done')
+
+asyncio.run(reset())
+"
+```
+
+## API Docs
+
+Interactive Swagger UI at `http://localhost:8000/docs`

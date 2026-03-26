@@ -1,133 +1,200 @@
 # Kalshi Algorithmic Trading Bot
 
-A full-stack algorithmic trading system that places real limit orders on [Kalshi](https://kalshi.com) — a CFTC-regulated US prediction market exchange. Built in Python and vanilla JavaScript over two days as a learning project to expand beyond a JavaScript/TypeScript background.
+A live algorithmic trading bot for [Kalshi](https://kalshi.com) — a CFTC-regulated US prediction market exchange. Trades Bitcoin daily price contracts using a momentum + settlement arbitrage strategy. Built in Python as a learning project coming from a JavaScript/TypeScript background.
 
-![Dashboard](dashboard/screenshot.png)
+**Starting balance:** $100 · **Current balance:** ~$91 · **Live win rate:** 66.7%
 
-## Live results
+> Down from $100 due to a position manager bug on day one that placed 60 duplicate trades. Fixed — see [Post-mortem](#post-mortem). Clean P&L since the fix is positive.
 
-- **+$3.86 profit** on first day of live trading
-- **11 trades** placed and tracked automatically
-- Running 24/7 on a MacBook, making real trades on a regulated exchange
+---
 
-## What it does
+## What It Does
 
 Every 60 seconds the bot:
 
-1. Fetches Bitcoin's real-time price from Kraken
-2. Calculates hourly momentum using linear regression on 5-minute candles
-3. Auto-selects the best Kalshi BTC market based on current price and momentum direction
-4. Places a limit order if momentum exceeds the minimum threshold
-5. Tracks fills and calculates P&L automatically
+1. Fetches BTC/USDT price from Kraken via ccxt
+2. Calculates momentum using linear regression on 12×5min candles
+3. Confirms signal with RSI-14 to filter oversold conditions
+4. Selects the best Kalshi KXBTCD market based on price and direction
+5. Places a limit order if all filters pass
+6. Tracks fills and P&L automatically via a background polling loop
+7. Sends an iMessage alert on every trade and settlement
 
-The strategy: Bitcoin daily markets on Kalshi price the probability that BTC will be above a threshold at settlement. If BTC has strong downward momentum, the bot sells YES contracts on markets where BTC is above the threshold — collecting premium on contracts likely to resolve NO.
+Two strategies run in rotation based on time to settlement:
 
-## Tech stack
+**Momentum** (>6hrs before 5pm EDT settlement)
+- SELL YES contracts when BTC has strong downward momentum
+- Filters: momentum >0.3%/hr, RSI >55, daily range >$1,000, contract price >15¢
+- BUY disabled — backtesting showed insufficient edge
 
-| Layer | Technology | Why |
-|-------|-----------|-----|
-| Backend | Python, FastAPI | Async-first, automatic API docs, clean DI system |
-| Scheduler | asyncio | Concurrent bot loops without threading complexity |
-| Database | SQLite + SQLAlchemy | Zero-config local persistence, async ORM |
-| Trading | Kalshi Python async SDK | Official CFTC-regulated exchange API |
-| Market data | ccxt (Kraken) | Real-time BTC price and OHLCV candles |
-| Frontend | Vanilla JS, Chart.js | No build step, fast to iterate |
+**Settlement Arb** (<6hrs before settlement)
+- Models fair value using a normal distribution of BTC price moves
+- Finds mispriced contracts where market price diverges from fair value by >8¢
+- Directional filter: only trades aligned with current momentum
 
-## Project structure
+One position at a time across all markets — the bot won't open a new trade until the current one settles at 5pm EDT.
 
+---
+
+## Stack
+
+| Layer | Technology | JS Equivalent |
+|-------|-----------|---------------|
+| Web framework | FastAPI | Express |
+| Server | Uvicorn | nodemon |
+| Database | SQLite + SQLAlchemy async | Mongoose + MongoDB |
+| Validation | Pydantic | Zod |
+| HTTP client | httpx | axios |
+| Market data | ccxt (Kraken) | — |
+| Trading | kalshi-python-async | — |
+| Alerts | osascript (AppleScript) | — |
+| Frontend | Vanilla JS + Chart.js | — |
+
+---
+
+## Project Structure
 ```
 kalshi-trading-bot/
 ├── backend/
-│   ├── main.py                          # FastAPI app + lifespan management
+│   ├── main.py                            # FastAPI app, lifespan, router registration
 │   ├── app/
+│   │   ├── config.py                      # Runtime-configurable strategy params
 │   │   ├── bots/
-│   │   │   ├── btc_threshold_strategy.py  # Core trading strategy
-│   │   │   ├── macd_strategy.py           # MACD signal generation
-│   │   │   └── indicators.py              # Pure pandas: MACD, RSI, VWAP
+│   │   │   ├── btc_threshold_strategy.py  # Momentum + RSI signal generation
+│   │   │   └── settlement_arb_strategy.py # Fair-value arbitrage near settlement
 │   │   ├── models/
 │   │   │   ├── database.py                # SQLAlchemy table definitions
 │   │   │   └── db.py                      # Async engine + session management
 │   │   ├── routes/
-│   │   │   ├── trades.py                  # Trade history + P&L endpoints
+│   │   │   ├── trades.py                  # Trade history + P&L + chart endpoints
 │   │   │   ├── bots.py                    # Bot start/stop controls
-│   │   │   └── market.py                  # Live Kalshi market data
+│   │   │   ├── market.py                  # Live Kalshi market feed
+│   │   │   ├── backtest.py                # Backtest runner + parameter sweep
+│   │   │   └── settings.py                # Runtime config read/write
 │   │   └── services/
-│   │       ├── scheduler.py               # Bot execution loops (asyncio)
-│   │       ├── trader.py                  # Kalshi order placement
-│   │       ├── fill_tracker.py            # Polls for fills + settlements
-│   │       └── position_manager.py        # Prevents duplicate orders
-│   └── tests/
-│       └── test_macd_strategy.py
+│   │       ├── scheduler.py               # Bot tick loop, strategy dispatch
+│   │       ├── trader.py                  # Order placement (live + dry-run mode)
+│   │       ├── fill_tracker.py            # Polls fills and settlement P&L
+│   │       ├── position_manager.py        # Global one-position-at-a-time mutex
+│   │       └── alerter.py                 # iMessage alerts via osascript
+│   └── backtesting/
+│       ├── backtest.py                    # Full backtest engine + parameter sweep
+│       └── analyze.py                     # Trade outcome analysis
 └── dashboard/
-    ├── index.html
+    ├── index.html                         # Live trading dashboard
+    ├── backtest.html                      # Backtest results + parameter sweep
+    ├── settings.html                      # Runtime strategy configuration
     └── src/
-        ├── components/                    # Chart, trade table, bot cards
-        └── services/api.js               # All backend API calls
+        ├── app.js                         # Init, clock, auto-refresh
+        ├── services/api.js                # All backend HTTP calls
+        ├── styles/main.css                # Dark terminal aesthetic
+        └── components/
+            ├── chart.js                   # Cumulative P&L chart (Chart.js)
+            ├── trades.js                  # Trade log table
+            ├── bots.js                    # Bot toggle controls
+            ├── markets.js                 # Live Kalshi market feed
+            └── toast.js                   # Toast notifications
 ```
+
+---
 
 ## Setup
 
-**Requirements:** Python 3.13+, a Kalshi account with API credentials
-
+**Requirements:** Python 3.13+, Kalshi account with API credentials
 ```bash
 # Backend
 cd backend
 python3.13 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-pip install greenlet kalshi_python_async
 
 # Configure
 cp .env.example .env
-# Add your Kalshi API key ID and private key path
+# Fill in:
+#   KALSHI_API_KEY_ID=your-key-id
+#   KALSHI_PRIVATE_KEY_PATH=./kalshi_private_key.pem
+#   KALSHI_HOST=https://api.elections.kalshi.com/trade-api/v2
+#   DRY_RUN=true   ← set to false for live trading
 
-# Run
-uvicorn main:app --reload
+# Run (keep awake overnight)
+caffeinate -i uvicorn main:app --reload
 ```
-
 ```bash
 # Dashboard (separate terminal)
 cd dashboard
 python3.13 -m http.server 5500
-# Open http://localhost:5500
+# → http://localhost:5500
 ```
 
 Interactive API docs at `http://localhost:8000/docs`
 
-## Environment variables
+---
 
-```env
-KALSHI_API_KEY_ID=your-api-key-id
-KALSHI_PRIVATE_KEY_PATH=./kalshi_private_key.pem
-KALSHI_HOST=https://api.elections.kalshi.com/trade-api/v2
-DRY_RUN=true
-DATABASE_URL=sqlite+aiosqlite:///./data/bot.db
-DEFAULT_POSITION_SIZE=1.0
-```
-
-Set `DRY_RUN=false` to place real orders.
-
-## API endpoints
+## API Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/trades` | Trade history, filterable by strategy |
-| GET | `/api/trades/summary` | Aggregate P&L and win rate |
+| GET | `/health` | Health check |
+| GET | `/api/trades` | Trade history (`?strategy=macd&limit=50`) |
+| GET | `/api/trades/summary` | Total P&L, win rate, by strategy |
+| GET | `/api/trades/chart` | Cumulative P&L time series |
 | GET | `/api/bots` | Bot status and statistics |
-| POST | `/api/bots/start` | Start a bot with position size |
-| POST | `/api/bots/stop/{strategy}` | Stop a running bot |
-| GET | `/api/market/events` | Live Kalshi markets |
+| POST | `/api/bots/start` | Start a bot (`{strategy, position_size}`) |
+| POST | `/api/bots/stop/:name` | Stop a bot |
+| GET | `/api/market/events` | Live Kalshi market feed |
+| GET | `/api/backtest/run` | Run backtest (`?days=30`) |
+| GET | `/api/settings` | Get current strategy config |
+| POST | `/api/settings` | Update config at runtime — no restart needed |
 
-## What I learned
+---
 
-This project was built to expand beyond a JavaScript/TypeScript background. Key things learned:
+## Backtesting
 
-- Python async/await patterns vs JavaScript (similar concepts, different ecosystem)
-- SQLAlchemy async ORM (vs Mongoose in Node)
-- FastAPI dependency injection (vs Express middleware)
-- pandas for time-series data manipulation
-- Real-world API integration with authentication, rate limiting, and error handling
-- Running a live system with real money on the line
+The engine fetches historical BTC/USDT candles from Kraken and simulates the full strategy across a 15-config parameter sweep (5 daily range filters × 3 momentum thresholds).
+```bash
+cd backend
+python backtesting/backtest.py 30   # 30-day backtest
+```
+
+Or run it from the dashboard's Backtest page.
+
+**Best config (30 days, March 2026):**
+
+| Metric | Value |
+|--------|-------|
+| Momentum threshold | >0.3%/hr |
+| Trades | 7 |
+| Win rate | 57.1% |
+| Total P&L | +$0.22 |
+| Profit factor | 1.14 |
+| Max drawdown | $1.24 |
+
+Key finding: SELL trades win 4/5. BUY trades win 0/2. BUY disabled in live bot.
+
+---
+
+## Post-mortem
+
+On day one, the bot placed 60 duplicate SELL trades in a single session. Root cause: the position manager checked for open positions per-market-ticker, but the bot was selecting a new ticker every 2 minutes as BTC moved. Each new ticker passed the duplicate check and fired another order.
+
+Fix: changed `has_open_position(ticker)` → `has_any_open_position()`. The bot now holds one position globally until settlement at 5pm EDT, regardless of which market it's on.
+
+Secondary bug: filled positions were being closed in the position manager the moment they filled, allowing a new trade to fire immediately. Fixed by keeping the position locked until `fill_tracker` confirms settlement — not just fill.
+
+---
+
+## What I Learned
+
+Coming from a MEAN stack background, this project covered:
+
+- Python async/await patterns — similar to JS but different event loop model
+- SQLAlchemy async ORM — like Mongoose but with explicit session management
+- FastAPI dependency injection — cleaner than Express middleware for typed APIs
+- pandas + linear regression for time-series signal generation
+- Running a live system with real money and real consequences for bugs
+- The importance of position sizing and duplicate-order protection in trading systems
+
+---
 
 ## Author
 
