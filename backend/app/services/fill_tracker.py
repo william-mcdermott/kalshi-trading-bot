@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from app.models.db import SessionLocal
 from app.models.database import Trade
+from app.services.position_manager import position_manager
 
 POLL_INTERVAL = 120
 
@@ -43,7 +44,7 @@ async def check_fills(client):
 
                     trade.filled    = True
                     trade.closed_at = datetime.now(timezone.utc)
-                    trade.pnl       = -total_cost  # always negative until settlement pays out
+                    trade.pnl       = -total_cost  # negative until settlement
 
                     log.info(f"Order {trade.order_id[:8]}... filled — cost=${total_cost:.4f}")
 
@@ -73,10 +74,10 @@ async def check_settlements(client):
 
         for trade in trades:
             try:
-                fills = await client.get_fills(order_id=trade.order_id)
-                fill_list = fills.fills or []
-
+                fills        = await client.get_fills(order_id=trade.order_id)
+                fill_list    = fills.fills or []
                 total_payout = 0.0
+
                 for f in fill_list:
                     for attr in ['payout_dollars', 'settlement_payout_dollars',
                                  'yes_price_dollars', 'no_price_dollars']:
@@ -96,6 +97,7 @@ async def check_settlements(client):
                         f"payout=${total_payout:.4f} cost=${total_cost:.4f} "
                         f"pnl=${trade.pnl:.4f}"
                     )
+                    position_manager.close_position(trade.market_id)
                     from app.services.alerter import alert_trade_settled
                     await alert_trade_settled(trade.side, trade.market_id, trade.pnl)
 
@@ -112,6 +114,7 @@ async def check_settlements(client):
                                 f"payout=$0.0000 cost=${total_cost:.4f} "
                                 f"pnl=${trade.pnl:.4f}"
                             )
+                            position_manager.close_position(trade.market_id)
                             from app.services.alerter import alert_trade_settled
                             await alert_trade_settled(trade.side, trade.market_id, trade.pnl)
 
