@@ -20,6 +20,7 @@ class Config:
     min_edge:                float = 0.08  # minimum mispricing to trade
     max_hours_to_settlement: float = 6.0   # arb window (hours before 5pm)
     momentum_block:          float = 0.3   # block trade if momentum > this against us
+    btc_volatility_pct: float = 0.56
 
     # ── Scheduler ─────────────────────────────────────
     tick_interval:      int   = 60    # seconds between bot ticks

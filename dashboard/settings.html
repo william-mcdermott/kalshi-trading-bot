@@ -1,403 +1,458 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>PMBOT — Settings</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="src/styles/main.css"/>
-  <style>
-    .settings-layout {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      padding: 16px;
-      max-width: 780px;
-      margin: 0 auto;
-      height: calc(100vh - 48px);
-      margin-top: 48px;
-      overflow-y: auto;
-    }
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PMBOT — Settings</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="src/styles/main.css" />
+    <style>
+        .settings-layout {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding: 16px;
+            max-width: 780px;
+            margin: 0 auto;
+            height: calc(100vh - 48px);
+            margin-top: 48px;
+            overflow-y: auto;
+        }
 
-    .settings-group {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      overflow: hidden;
-    }
+        .settings-group {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+        }
 
-    .settings-group-header {
-      padding: 10px 16px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
+        .settings-group-header {
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
 
-    .settings-group-title {
-      font-family: var(--font-mono);
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.14em;
-      color: var(--text-dim);
-    }
+        .settings-group-title {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.14em;
+            color: var(--text-dim);
+        }
 
-    .settings-group-badge {
-      font-family: var(--font-mono);
-      font-size: 9px;
-      padding: 1px 6px;
-      border-radius: 3px;
-      background: rgba(0,229,160,0.08);
-      color: var(--green);
-      border: 1px solid var(--green-dim);
-    }
+        .settings-group-badge {
+            font-family: var(--font-mono);
+            font-size: 9px;
+            padding: 1px 6px;
+            border-radius: 3px;
+            background: rgba(0, 229, 160, 0.08);
+            color: var(--green);
+            border: 1px solid var(--green-dim);
+        }
 
-    .settings-row {
-      display: grid;
-      grid-template-columns: 1fr 160px 220px;
-      align-items: center;
-      gap: 16px;
-      padding: 11px 16px;
-      border-bottom: 1px solid var(--border);
-      transition: background 0.1s;
-    }
+        .settings-row {
+            display: grid;
+            grid-template-columns: 1fr 160px 220px;
+            align-items: center;
+            gap: 16px;
+            padding: 11px 16px;
+            border-bottom: 1px solid var(--border);
+            transition: background 0.1s;
+        }
 
-    .settings-row:last-child { border-bottom: none; }
-    .settings-row:hover { background: var(--bg-hover); }
+        .settings-row:last-child {
+            border-bottom: none;
+        }
 
-    .settings-label {
-      font-family: var(--font-mono);
-      font-size: 12px;
-      color: var(--text);
-    }
+        .settings-row:hover {
+            background: var(--bg-hover);
+        }
 
-    .settings-key {
-      font-family: var(--font-mono);
-      font-size: 9px;
-      color: var(--text-dim);
-      margin-top: 2px;
-      letter-spacing: 0.06em;
-    }
+        .settings-label {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--text);
+        }
 
-    .settings-input {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      color: var(--text);
-      font-family: var(--font-mono);
-      font-size: 12px;
-      padding: 5px 8px;
-      width: 100%;
-      outline: none;
-      transition: border-color 0.15s;
-      text-align: right;
-    }
+        .settings-key {
+            font-family: var(--font-mono);
+            font-size: 9px;
+            color: var(--text-dim);
+            margin-top: 2px;
+            letter-spacing: 0.06em;
+        }
 
-    .settings-input:focus { border-color: var(--green-dim); }
-    .settings-input.changed { border-color: var(--amber); color: var(--amber); }
+        .settings-input {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text);
+            font-family: var(--font-mono);
+            font-size: 12px;
+            padding: 5px 8px;
+            width: 100%;
+            outline: none;
+            transition: border-color 0.15s;
+            text-align: right;
+        }
 
-    .settings-desc {
-      font-family: var(--font-mono);
-      font-size: 10px;
-      color: var(--text-dim);
-      line-height: 1.4;
-    }
+        .settings-input:focus {
+            border-color: var(--green-dim);
+        }
 
-    .save-bar {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      padding: 12px 16px;
-      position: sticky;
-      bottom: 0;
-    }
+        .settings-input.changed {
+            border-color: var(--amber);
+            color: var(--amber);
+        }
 
-    .save-btn {
-      font-family: var(--font-mono);
-      font-size: 11px;
-      background: var(--green-dim);
-      border: 1px solid var(--green-dim);
-      color: var(--green);
-      border-radius: var(--radius);
-      padding: 6px 18px;
-      cursor: pointer;
-      letter-spacing: 0.06em;
-      transition: all 0.15s;
-    }
+        .settings-desc {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            color: var(--text-dim);
+            line-height: 1.4;
+        }
 
-    .save-btn:hover { background: var(--green); color: var(--bg); }
-    .save-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .save-bar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 12px 16px;
+            position: sticky;
+            bottom: 0;
+        }
 
-    .reset-btn {
-      font-family: var(--font-mono);
-      font-size: 11px;
-      background: none;
-      border: 1px solid var(--border);
-      color: var(--text-dim);
-      border-radius: var(--radius);
-      padding: 6px 14px;
-      cursor: pointer;
-      letter-spacing: 0.06em;
-      transition: all 0.15s;
-    }
+        .save-btn {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            background: var(--green-dim);
+            border: 1px solid var(--green-dim);
+            color: var(--green);
+            border-radius: var(--radius);
+            padding: 6px 18px;
+            cursor: pointer;
+            letter-spacing: 0.06em;
+            transition: all 0.15s;
+        }
 
-    .reset-btn:hover { color: var(--text); border-color: var(--border-hi); }
+        .save-btn:hover {
+            background: var(--green);
+            color: var(--bg);
+        }
 
-    .save-status {
-      font-family: var(--font-mono);
-      font-size: 10px;
-      color: var(--text-dim);
-      margin-left: auto;
-    }
+        .save-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
 
-    .save-status.ok  { color: var(--green); }
-    .save-status.err { color: var(--red); }
+        .reset-btn {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            border-radius: var(--radius);
+            padding: 6px 14px;
+            cursor: pointer;
+            letter-spacing: 0.06em;
+            transition: all 0.15s;
+        }
 
-    .nav-tab {
-      font-family: var(--font-mono);
-      font-size: 10px;
-      background: none;
-      border: none;
-      color: var(--text-dim);
-      padding: 0 16px;
-      height: 48px;
-      cursor: pointer;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      text-decoration: none;
-      display: flex;
-      align-items: center;
-      border-bottom: 2px solid transparent;
-      transition: all 0.15s;
-    }
+        .reset-btn:hover {
+            color: var(--text);
+            border-color: var(--border-hi);
+        }
 
-    .nav-tab:hover  { color: var(--text); }
-    .nav-tab.active { color: var(--green); border-bottom-color: var(--green); }
-  </style>
+        .save-status {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            color: var(--text-dim);
+            margin-left: auto;
+        }
+
+        .save-status.ok {
+            color: var(--green);
+        }
+
+        .save-status.err {
+            color: var(--red);
+        }
+
+        .nav-tab {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            padding: 0 16px;
+            height: 48px;
+            cursor: pointer;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            border-bottom: 2px solid transparent;
+            transition: all 0.15s;
+        }
+
+        .nav-tab:hover {
+            color: var(--text);
+        }
+
+        .nav-tab.active {
+            color: var(--green);
+            border-bottom-color: var(--green);
+        }
+    </style>
 </head>
+
 <body>
 
-  <header class="topbar">
-    <div class="topbar-left">
-      <span class="logo">PMBOT</span>
-      <span class="separator">/</span>
-      <nav style="display:flex;">
-        <a class="nav-tab" href="index.html">dashboard</a>
-        <a class="nav-tab" href="backtest.html">backtest</a>
-        <a class="nav-tab active" href="settings.html">settings</a>
-      </nav>
+    <header class="topbar">
+        <div class="topbar-left">
+            <span class="logo">PMBOT</span>
+            <span class="separator">/</span>
+            <nav style="display:flex;">
+                <a class="nav-tab" href="index.html">dashboard</a>
+                <a class="nav-tab" href="backtest.html">backtest</a>
+                <a class="nav-tab active" href="settings.html">settings</a>
+            </nav>
+        </div>
+        <div class="topbar-right">
+            <span class="clock" id="clock">--:--:--</span>
+        </div>
+    </header>
+
+    <div class="settings-layout">
+
+        <!-- Momentum strategy -->
+        <div class="settings-group">
+            <div class="settings-group-header">
+                <span class="settings-group-title">momentum strategy</span>
+                <span class="settings-group-badge">live</span>
+            </div>
+
+            <div class="settings-row">
+                <div>
+                    <div class="settings-label">Minimum Momentum</div>
+                    <div class="settings-key">min_momentum_pct</div>
+                </div>
+                <input class="settings-input" type="number" id="min_momentum_pct" step="0.1" min="0.1" max="2.0" />
+                <div class="settings-desc">Minimum BTC momentum %/hr to trigger a trade. Higher = fewer but
+                    higher-confidence trades.</div>
+            </div>
+
+            <div class="settings-row">
+                <div>
+                    <div class="settings-label">Min Sell Price</div>
+                    <div class="settings-key">min_sell_price</div>
+                </div>
+                <input class="settings-input" type="number" id="min_sell_price" step="0.01" min="0.05" max="0.50" />
+                <div class="settings-desc">Don't SELL YES contracts below this price. Avoids low-premium trades with
+                    poor risk/reward.</div>
+            </div>
+
+            <div class="settings-row">
+                <div>
+                    <div class="settings-label">Min Daily Range</div>
+                    <div class="settings-key">min_daily_range</div>
+                </div>
+                <input class="settings-input" type="number" id="min_daily_range" step="100" min="0" max="10000" />
+                <div class="settings-desc">Minimum BTC high-low range ($) for today. Skips low-volatility days where
+                    signals are noisy.</div>
+            </div>
+
+            <div class="settings-row">
+                <div>
+                    <div class="settings-label">RSI Sell Minimum</div>
+                    <div class="settings-key">rsi_sell_min</div>
+                </div>
+                <input class="settings-input" type="number" id="rsi_sell_min" step="1" min="30" max="80" />
+                <div class="settings-desc">Only SELL when RSI is above this level. Prevents selling into
+                    already-oversold conditions.</div>
+            </div>
+        </div>
+
+        <!-- Arb strategy -->
+        <div class="settings-group">
+            <div class="settings-group-header">
+                <span class="settings-group-title">settlement arb strategy</span>
+                <span class="settings-group-badge">live</span>
+            </div>
+
+            <div class="settings-row">
+                <div>
+                    <div class="settings-label">Minimum Edge</div>
+                    <div class="settings-key">min_edge</div>
+                </div>
+                <input class="settings-input" type="number" id="min_edge" step="0.01" min="0.02" max="0.30" />
+                <div class="settings-desc">Minimum mispricing vs fair value to trade. Lower = more trades, higher =
+                    higher-confidence only.</div>
+            </div>
+
+            <div class="settings-row">
+                <div>
+                    <div class="settings-label">Arb Window (hours)</div>
+                    <div class="settings-key">max_hours_to_settlement</div>
+                </div>
+                <input class="settings-input" type="number" id="max_hours_to_settlement" step="0.5" min="1" max="12" />
+                <div class="settings-desc">How many hours before 5pm EDT to activate the arb strategy. Outside this
+                    window uses momentum.</div>
+            </div>
+
+            <div class="settings-row">
+                <div>
+                    <div class="settings-label">Momentum Block</div>
+                    <div class="settings-key">momentum_block</div>
+                </div>
+                <input class="settings-input" type="number" id="momentum_block" step="0.1" min="0.1" max="2.0" />
+                <div class="settings-desc">Block arb trades when momentum exceeds this threshold against the trade
+                    direction.</div>
+            </div>
+            <div class="settings-row">
+                <div>
+                    <div class="settings-label">BTC Volatility</div>
+                    <div class="settings-key">btc_volatility_pct</div>
+                </div>
+                <input class="settings-input" type="number" id="btc_volatility_pct" step="0.01" min="0.1" max="5.0" />
+                <div class="settings-desc">Hourly BTC volatility % used in fair value model. Actual 30-day stdev:
+                    0.56%/hr.</div>
+            </div>
+        </div>
+
+        <!-- Scheduler -->
+        <div class="settings-group">
+            <div class="settings-group-header">
+                <span class="settings-group-title">scheduler</span>
+            </div>
+
+            <div class="settings-row">
+                <div>
+                    <div class="settings-label">Tick Interval</div>
+                    <div class="settings-key">tick_interval</div>
+                </div>
+                <input class="settings-input" type="number" id="tick_interval" step="10" min="30" max="300" />
+                <div class="settings-desc">Seconds between bot evaluation cycles. Lower = more responsive but more API
+                    calls.</div>
+            </div>
+
+            <div class="settings-row">
+                <div>
+                    <div class="settings-label">Stale Order Timeout</div>
+                    <div class="settings-key">stale_order_minutes</div>
+                </div>
+                <input class="settings-input" type="number" id="stale_order_minutes" step="5" min="5" max="120" />
+                <div class="settings-desc">Cancel unfilled resting orders after this many minutes. Prevents capital from
+                    being locked up.</div>
+            </div>
+        </div>
+
+        <!-- Save bar -->
+        <div class="save-bar">
+            <button class="save-btn" onclick="saveSettings()">save changes</button>
+            <button class="reset-btn" onclick="loadSettings()">reset</button>
+            <span class="save-status" id="save-status">changes take effect immediately — no restart needed</span>
+        </div>
+
     </div>
-    <div class="topbar-right">
-      <span class="clock" id="clock">--:--:--</span>
-    </div>
-  </header>
 
-  <div class="settings-layout">
+    <script>
+        const API_BASE = 'http://localhost:8000/api';
+        const FIELDS = [
+            'min_momentum_pct', 'min_sell_price', 'min_daily_range', 'rsi_sell_min',
+            'min_edge', 'max_hours_to_settlement', 'momentum_block',
+            'tick_interval', 'stale_order_minutes', 'btc_volatility_pct'
+        ];
 
-    <!-- Momentum strategy -->
-    <div class="settings-group">
-      <div class="settings-group-header">
-        <span class="settings-group-title">momentum strategy</span>
-        <span class="settings-group-badge">live</span>
-      </div>
-
-      <div class="settings-row">
-        <div>
-          <div class="settings-label">Minimum Momentum</div>
-          <div class="settings-key">min_momentum_pct</div>
-        </div>
-        <input class="settings-input" type="number" id="min_momentum_pct" step="0.1" min="0.1" max="2.0"/>
-        <div class="settings-desc">Minimum BTC momentum %/hr to trigger a trade. Higher = fewer but higher-confidence trades.</div>
-      </div>
-
-      <div class="settings-row">
-        <div>
-          <div class="settings-label">Min Sell Price</div>
-          <div class="settings-key">min_sell_price</div>
-        </div>
-        <input class="settings-input" type="number" id="min_sell_price" step="0.01" min="0.05" max="0.50"/>
-        <div class="settings-desc">Don't SELL YES contracts below this price. Avoids low-premium trades with poor risk/reward.</div>
-      </div>
-
-      <div class="settings-row">
-        <div>
-          <div class="settings-label">Min Daily Range</div>
-          <div class="settings-key">min_daily_range</div>
-        </div>
-        <input class="settings-input" type="number" id="min_daily_range" step="100" min="0" max="10000"/>
-        <div class="settings-desc">Minimum BTC high-low range ($) for today. Skips low-volatility days where signals are noisy.</div>
-      </div>
-
-      <div class="settings-row">
-        <div>
-          <div class="settings-label">RSI Sell Minimum</div>
-          <div class="settings-key">rsi_sell_min</div>
-        </div>
-        <input class="settings-input" type="number" id="rsi_sell_min" step="1" min="30" max="80"/>
-        <div class="settings-desc">Only SELL when RSI is above this level. Prevents selling into already-oversold conditions.</div>
-      </div>
-    </div>
-
-    <!-- Arb strategy -->
-    <div class="settings-group">
-      <div class="settings-group-header">
-        <span class="settings-group-title">settlement arb strategy</span>
-        <span class="settings-group-badge">live</span>
-      </div>
-
-      <div class="settings-row">
-        <div>
-          <div class="settings-label">Minimum Edge</div>
-          <div class="settings-key">min_edge</div>
-        </div>
-        <input class="settings-input" type="number" id="min_edge" step="0.01" min="0.02" max="0.30"/>
-        <div class="settings-desc">Minimum mispricing vs fair value to trade. Lower = more trades, higher = higher-confidence only.</div>
-      </div>
-
-      <div class="settings-row">
-        <div>
-          <div class="settings-label">Arb Window (hours)</div>
-          <div class="settings-key">max_hours_to_settlement</div>
-        </div>
-        <input class="settings-input" type="number" id="max_hours_to_settlement" step="0.5" min="1" max="12"/>
-        <div class="settings-desc">How many hours before 5pm EDT to activate the arb strategy. Outside this window uses momentum.</div>
-      </div>
-
-      <div class="settings-row">
-        <div>
-          <div class="settings-label">Momentum Block</div>
-          <div class="settings-key">momentum_block</div>
-        </div>
-        <input class="settings-input" type="number" id="momentum_block" step="0.1" min="0.1" max="2.0"/>
-        <div class="settings-desc">Block arb trades when momentum exceeds this threshold against the trade direction.</div>
-      </div>
-    </div>
-
-    <!-- Scheduler -->
-    <div class="settings-group">
-      <div class="settings-group-header">
-        <span class="settings-group-title">scheduler</span>
-      </div>
-
-      <div class="settings-row">
-        <div>
-          <div class="settings-label">Tick Interval</div>
-          <div class="settings-key">tick_interval</div>
-        </div>
-        <input class="settings-input" type="number" id="tick_interval" step="10" min="30" max="300"/>
-        <div class="settings-desc">Seconds between bot evaluation cycles. Lower = more responsive but more API calls.</div>
-      </div>
-
-      <div class="settings-row">
-        <div>
-          <div class="settings-label">Stale Order Timeout</div>
-          <div class="settings-key">stale_order_minutes</div>
-        </div>
-        <input class="settings-input" type="number" id="stale_order_minutes" step="5" min="5" max="120"/>
-        <div class="settings-desc">Cancel unfilled resting orders after this many minutes. Prevents capital from being locked up.</div>
-      </div>
-    </div>
-
-    <!-- Save bar -->
-    <div class="save-bar">
-      <button class="save-btn" onclick="saveSettings()">save changes</button>
-      <button class="reset-btn" onclick="loadSettings()">reset</button>
-      <span class="save-status" id="save-status">changes take effect immediately — no restart needed</span>
-    </div>
-
-  </div>
-
-  <script>
-    const API_BASE = 'http://localhost:8000/api';
-    const FIELDS   = [
-      'min_momentum_pct', 'min_sell_price', 'min_daily_range', 'rsi_sell_min',
-      'min_edge', 'max_hours_to_settlement', 'momentum_block',
-      'tick_interval', 'stale_order_minutes',
-    ];
-
-    // Clock
-    function updateClock() {
-      document.getElementById('clock').textContent =
-        new Date().toLocaleTimeString('en-US', { hour12: false });
-    }
-    setInterval(updateClock, 1000);
-    updateClock();
-
-    // Track original values to highlight changes
-    let originalValues = {};
-
-    async function loadSettings() {
-      try {
-        const res    = await fetch(`${API_BASE}/settings`);
-        const config = await res.json();
-        FIELDS.forEach(key => {
-          const el = document.getElementById(key);
-          if (el) {
-            el.value = config[key];
-            el.classList.remove('changed');
-          }
-        });
-        originalValues = { ...config };
-        document.getElementById('save-status').textContent = 'changes take effect immediately — no restart needed';
-        document.getElementById('save-status').className   = 'save-status';
-      } catch (e) {
-        document.getElementById('save-status').textContent = `failed to load: ${e.message}`;
-        document.getElementById('save-status').className   = 'save-status err';
-      }
-    }
-
-    function markChanged(key) {
-      const el = document.getElementById(key);
-      if (el && parseFloat(el.value) !== originalValues[key]) {
-        el.classList.add('changed');
-      } else if (el) {
-        el.classList.remove('changed');
-      }
-    }
-
-    FIELDS.forEach(key => {
-      const el = document.getElementById(key);
-      if (el) el.addEventListener('input', () => markChanged(key));
-    });
-
-    async function saveSettings() {
-      const updates = {};
-      FIELDS.forEach(key => {
-        const el = document.getElementById(key);
-        if (el) updates[key] = parseFloat(el.value);
-      });
-
-      const btn    = document.querySelector('.save-btn');
-      const status = document.getElementById('save-status');
-      btn.disabled = true;
-
-      try {
-        const res  = await fetch(`${API_BASE}/settings`, {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ updates }),
-        });
-        const data = await res.json();
-
-        if (data.status === 'ok') {
-          originalValues = { ...data.config };
-          FIELDS.forEach(key => document.getElementById(key)?.classList.remove('changed'));
-          status.textContent = `saved at ${new Date().toLocaleTimeString('en-US', { hour12: false })}`;
-          status.className   = 'save-status ok';
+        // Clock
+        function updateClock() {
+            document.getElementById('clock').textContent =
+                new Date().toLocaleTimeString('en-US', { hour12: false });
         }
-      } catch (e) {
-        status.textContent = `save failed: ${e.message}`;
-        status.className   = 'save-status err';
-      } finally {
-        btn.disabled = false;
-      }
-    }
+        setInterval(updateClock, 1000);
+        updateClock();
 
-    loadSettings();
-  </script>
+        // Track original values to highlight changes
+        let originalValues = {};
+
+        async function loadSettings() {
+            try {
+                const res = await fetch(`${API_BASE}/settings`);
+                const config = await res.json();
+                FIELDS.forEach(key => {
+                    const el = document.getElementById(key);
+                    if (el) {
+                        el.value = config[key];
+                        el.classList.remove('changed');
+                    }
+                });
+                originalValues = { ...config };
+                document.getElementById('save-status').textContent = 'changes take effect immediately — no restart needed';
+                document.getElementById('save-status').className = 'save-status';
+            } catch (e) {
+                document.getElementById('save-status').textContent = `failed to load: ${e.message}`;
+                document.getElementById('save-status').className = 'save-status err';
+            }
+        }
+
+        function markChanged(key) {
+            const el = document.getElementById(key);
+            if (el && parseFloat(el.value) !== originalValues[key]) {
+                el.classList.add('changed');
+            } else if (el) {
+                el.classList.remove('changed');
+            }
+        }
+
+        FIELDS.forEach(key => {
+            const el = document.getElementById(key);
+            if (el) el.addEventListener('input', () => markChanged(key));
+        });
+
+        async function saveSettings() {
+            const updates = {};
+            FIELDS.forEach(key => {
+                const el = document.getElementById(key);
+                if (el) updates[key] = parseFloat(el.value);
+            });
+
+            const btn = document.querySelector('.save-btn');
+            const status = document.getElementById('save-status');
+            btn.disabled = true;
+
+            try {
+                const res = await fetch(`${API_BASE}/settings`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ updates }),
+                });
+                const data = await res.json();
+
+                if (data.status === 'ok') {
+                    originalValues = { ...data.config };
+                    FIELDS.forEach(key => document.getElementById(key)?.classList.remove('changed'));
+                    status.textContent = `saved at ${new Date().toLocaleTimeString('en-US', { hour12: false })}`;
+                    status.className = 'save-status ok';
+                }
+            } catch (e) {
+                status.textContent = `save failed: ${e.message}`;
+                status.className = 'save-status err';
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        loadSettings();
+    </script>
 </body>
+
 </html>

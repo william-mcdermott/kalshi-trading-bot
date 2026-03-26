@@ -12,7 +12,7 @@ log = logging.getLogger(__name__)
 from app.config import config
 MIN_CONTRACT_PRICE      = 0.05
 MAX_CONTRACT_PRICE      = 0.95
-BTC_VOLATILITY_PCT      = 2.5
+BTC_VOLATILITY_PCT      = 0.56
 
 
 @dataclass
@@ -132,7 +132,7 @@ async def find_best_opportunity(hours_to_settlement: float) -> Signal:
     best_abs_edge = 0.0
 
     for m in markets:
-        fv   = fair_value(btc_price, m["threshold"], hours_to_settlement)
+        fv   = fair_value(btc_price, m["threshold"], hours_to_settlement, config.btc_volatility_pct)
         edge = fv - m["mid"]
 
         if abs(edge) < config.min_edge:
