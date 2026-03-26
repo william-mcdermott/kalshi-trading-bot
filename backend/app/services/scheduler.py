@@ -114,6 +114,14 @@ async def run_bot(strategy_name: str, client, market_ticker: str, hours_left: fl
 
         order_result = await place_order(signal, active_ticker, bot.position_size)
 
+        if not order_result.success or not order_result.order_id:
+            log.warning(f"{strategy_name}: order failed — {order_result.message}")
+            return
+
+        if order_result.order_id == "dry_run_order":
+            log.info(f"{strategy_name}: [DRY RUN] {signal.action} on {active_ticker} @ {signal.price:.3f}")
+            return
+
         trade = Trade(
             strategy   = strategy_name,
             market_id  = active_ticker,
