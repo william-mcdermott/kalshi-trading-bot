@@ -12,10 +12,13 @@
 
   <!-- Top bar -->
   <header class="topbar">
-    <div class="topbar-left">
+<div class="topbar-left">
       <span class="logo">PMBOT</span>
       <span class="separator">/</span>
-      <span class="subtitle">incubation dashboard</span>
+      <nav style="display:flex;gap:0;">
+        <a href="index.html" style="font-family:var(--font-mono);font-size:10px;color:var(--green);padding:0 16px;height:48px;display:flex;align-items:center;letter-spacing:0.08em;text-transform:uppercase;text-decoration:none;border-bottom:2px solid var(--green);">dashboard</a>
+        <a href="backtest.html" style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);padding:0 16px;height:48px;display:flex;align-items:center;letter-spacing:0.08em;text-transform:uppercase;text-decoration:none;border-bottom:2px solid transparent;">backtest</a>
+      </nav>
     </div>
     <div class="topbar-right">
       <span class="clock" id="clock">--:--:--</span>
