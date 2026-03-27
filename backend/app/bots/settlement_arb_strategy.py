@@ -10,6 +10,7 @@ import httpx
 log = logging.getLogger(__name__)
 
 from app.config import config
+from app.bots.btc_threshold_strategy import fetch_btc_history, calculate_momentum, get_todays_series
 MIN_CONTRACT_PRICE      = 0.05
 MAX_CONTRACT_PRICE      = 0.95
 BTC_VOLATILITY_PCT      = 0.56
@@ -67,15 +68,33 @@ def fetch_daily_range() -> float:
 
 
 async def scan_markets(hours_to_settlement: float) -> list[dict]:
+    all_markets = []
+    cursor = None
+
     async with httpx.AsyncClient(timeout=10.0) as http:
-        r = await http.get(
-            "https://api.elections.kalshi.com/trade-api/v2/markets",
-            params={"limit": 100, "status": "open", "series_ticker": "KXBTCD"},
-        )
-        markets = r.json().get("markets", [])
+        while True:
+            params = {
+                "limit": 100,
+                "status": "open",
+                "event_ticker": get_todays_series(),
+            }
+            if cursor:
+                params["cursor"] = cursor
+
+            r    = await http.get(
+                "https://api.elections.kalshi.com/trade-api/v2/markets",
+                params=params,
+            )
+            data    = r.json()
+            markets = data.get("markets", [])
+            cursor  = data.get("cursor", "")
+            all_markets.extend(markets)
+
+            if not cursor or not markets:
+                break
 
     result = []
-    for m in markets:
+    for m in all_markets:
         ticker  = m.get("ticker", "")
         yes_bid = m.get("yes_bid_dollars")
         yes_ask = m.get("yes_ask_dollars")
@@ -119,7 +138,6 @@ async def find_best_opportunity(hours_to_settlement: float) -> Signal:
             market_ticker="",
         )
 
-    from app.bots.btc_threshold_strategy import fetch_btc_history, calculate_momentum
     prices    = fetch_btc_history(12)
     btc_price = prices[-1]
     momentum  = calculate_momentum(prices)

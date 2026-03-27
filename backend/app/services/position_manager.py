@@ -31,9 +31,7 @@ class PositionManager:
                 select(Trade).where(
                     Trade.order_id != None,
                     Trade.order_id != "dry_run_order",
-                ).where(
-                    # Either not yet filled, or filled but not yet settled
-                    (Trade.filled == False) | (Trade.pnl < 0)
+                    Trade.filled == False,  # only truly open orders
                 )
             )
             trades = result.scalars().all()

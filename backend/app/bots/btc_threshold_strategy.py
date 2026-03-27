@@ -9,6 +9,17 @@ log = logging.getLogger(__name__)
 
 from app.config import config
 TARGET_DISTANCE = 800.0
+
+
+def get_todays_series() -> str:
+    """Returns today's 5pm EDT series ticker e.g. KXBTCD-26MAR2717"""
+    from datetime import datetime, timezone, timedelta
+    # Kalshi uses EDT (UTC-4)
+    edt   = datetime.now(timezone.utc) - timedelta(hours=4)
+    month = edt.strftime("%b").upper()  # MAR
+    day   = edt.strftime("%d")          # 27
+    year  = edt.strftime("%y")          # 26
+    return f"KXBTCD-{year}{month}{day}17"
 MAX_BUY_PRICE   = 0.40
 RSI_PERIOD      = 14
 
@@ -106,18 +117,36 @@ async def find_directional_market(client, btc_price: float, bullish: bool) -> Op
 
     target = btc_price + TARGET_DISTANCE if bullish else btc_price - TARGET_DISTANCE
 
+    all_markets = []
+    cursor = None
+
     async with httpx.AsyncClient(timeout=10.0) as http:
-        r = await http.get(
-            "https://api.elections.kalshi.com/trade-api/v2/markets",
-            params={"limit": 100, "status": "open", "series_ticker": "KXBTCD"},
-        )
-        markets = r.json().get("markets", [])
+        while True:
+            params = {
+                "limit": 100,
+                "status": "open",
+                "event_ticker": get_todays_series(),
+            }
+            if cursor:
+                params["cursor"] = cursor
+
+            r = await http.get(
+                "https://api.elections.kalshi.com/trade-api/v2/markets",
+                params=params,
+            )
+            data     = r.json()
+            markets  = data.get("markets", [])
+            cursor   = data.get("cursor", "")
+            all_markets.extend(markets)
+
+            if not cursor or not markets:
+                break
 
     best_ticker    = None
     best_threshold = None
     best_distance  = float("inf")
 
-    for m in markets:
+    for m in all_markets:
         ticker = m.get("ticker", "")
         try:
             threshold = parse_threshold(ticker)
