@@ -3,7 +3,7 @@ import asyncio
 import logging
 import httpx
 from datetime import datetime, timezone
-from sqlalchemy import select, or_
+from sqlalchemy import select
 
 from app.models.db import SessionLocal
 from app.models.database import Trade
@@ -90,7 +90,7 @@ async def check_settlements(client):
                 Trade.filled == True,
                 Trade.order_id != None,
                 Trade.order_id != "dry_run_order",
-                or_(Trade.pnl == 0.0, Trade.pnl < 0),
+                Trade.settled == False,
             )
         )
         trades = result.scalars().all()
@@ -121,8 +121,10 @@ async def check_settlements(client):
                 # SELL YES: keep cost if no, owe $1 if yes
                 if trade.side == "BUY":
                     trade.pnl = round(1.0 - total_cost, 4) if result_val == "yes" else round(-total_cost, 4)
-                else:  # SELL
+                else:
                     trade.pnl = round(total_cost, 4) if result_val == "no" else round(-(1.0 - total_cost), 4)
+
+                trade.settled = True  # never process this trade again
 
                 log.info(
                     f"Settlement — {trade.side} {trade.market_id[-16:]} "
@@ -134,7 +136,6 @@ async def check_settlements(client):
 
                 from app.services.alerter import alert_trade_settled
                 await alert_trade_settled(trade.side, trade.market_id, trade.pnl)
-
             except Exception as e:
                 log.error(f"Error checking settlement for {trade.order_id}: {e}")
 
