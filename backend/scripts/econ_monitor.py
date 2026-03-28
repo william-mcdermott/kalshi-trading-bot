@@ -2,25 +2,47 @@
 """
 econ_monitor.py
 
-Fetches Kalshi pricing for upcoming CPI, payrolls, and Fed events
-and prints a summary of what the market is pricing.
+Fetches Kalshi pricing for upcoming CPI, payrolls, unemployment, and Fed events.
+Sends a summary iMessage and prints to stdout.
 
-Run manually before major data releases to spot mispricings.
+Run manually or via launchd before major data releases.
 Usage: python scripts/econ_monitor.py
+
+Schedule:
+  - April 3  8:25am ET — Payrolls + Unemployment
+  - April 10 8:25am ET — CPI (March data)
 """
 
 import asyncio
-import httpx
+import subprocess
 from datetime import datetime, timezone
 
+import httpx
+
+IMESSAGE_NUMBER = "5129928658"
 
 EVENTS = {
-    "CPI MoM":      ("KXECONSTATCPI",     "KXECONSTATCPI-26MAR",  "exact"),
+    "CPI MoM":      ("KXECONSTATCPI",     "KXECONSTATCPI-26MAR",     "exact"),
     "Core CPI MoM": ("KXECONSTATCPICORE", "KXECONSTATCPICORE-26MAR", "exact"),
-    "Payrolls":     ("KXPAYROLLS",         None,                   "threshold"),
-    "Unemployment": ("KXECONSTATU3",       None,                   "exact"),
-    "Fed Apr":      ("KXFED",              "KXFED-26APR",          "threshold"),
+    "Payrolls":     ("KXPAYROLLS",         None,                      "threshold"),
+    "Unemployment": ("KXECONSTATU3",       None,                      "exact"),
+    "Fed Apr":      ("KXFED",              "KXFED-26APR",             "threshold"),
 }
+
+
+def send_imessage(message: str):
+    # Escape quotes for AppleScript
+    safe = message.replace('"', "'").replace("\\", "")
+    script = f'''
+    tell application "Messages"
+        set targetService to 1st service whose service type = iMessage
+        set targetBuddy to buddy "{IMESSAGE_NUMBER}" of targetService
+        send "{safe}" to targetBuddy
+    end tell
+    '''
+    result = subprocess.run(["osascript", "-e", script], capture_output=True)
+    if result.returncode != 0:
+        print(f"iMessage failed: {result.stderr.decode().strip()}")
 
 
 async def get_next_event(series_ticker: str) -> str | None:
@@ -32,7 +54,6 @@ async def get_next_event(series_ticker: str) -> str | None:
         events = r.json().get("events", [])
         if not events:
             return None
-        # Return last in list (nearest chronologically — API returns newest first)
         return events[-1]["event_ticker"]
 
 
@@ -64,17 +85,27 @@ def parse_strike(ticker: str) -> float | None:
         return None
 
 
-async def analyze_event(name: str, series: str, event_ticker: str | None, market_type: str = "exact"):
+async def analyze_event(
+    name: str,
+    series: str,
+    event_ticker: str | None,
+    market_type: str = "exact",
+) -> tuple[str, str]:
+    """
+    Returns (summary_line, detail_block) for console + iMessage.
+    summary_line: one-liner e.g. "CPI MoM: 0.9% most likely (32%)"
+    detail_block: multi-line block for console output
+    """
     if event_ticker is None:
         event_ticker = await get_next_event(series)
     if not event_ticker:
-        print(f"\n{name}: no open events found")
-        return
+        return f"{name}: no open events", f"{name}: no open events found"
 
     markets = await get_markets(event_ticker)
     if not markets:
-        print(f"\n{name} ({event_ticker}): no markets found")
-        return
+        return f"{name}: no markets", f"{name} ({event_ticker}): no markets found"
+
+    close_time = markets[0].get("close_time", "unknown")
 
     # Build distribution
     distribution = []
@@ -82,50 +113,80 @@ async def analyze_event(name: str, series: str, event_ticker: str | None, market
         strike = parse_strike(m["ticker"])
         if strike is None:
             continue
-        bid    = float(m.get("yes_bid_dollars") or 0)
-        ask    = float(m.get("yes_ask_dollars") or 0)
-        mid    = (bid + ask) / 2
-        vol24  = float(m.get("volume_24h_fp") or 0)
-        if mid > 0:
+        bid   = float(m.get("yes_bid_dollars") or 0)
+        ask   = float(m.get("yes_ask_dollars") or 0)
+        mid   = (bid + ask) / 2
+        vol24 = float(m.get("volume_24h_fp") or 0)
+        if mid > 0.01:
             distribution.append((strike, mid, bid, ask, vol24))
 
     distribution.sort(key=lambda x: x[1], reverse=True)
 
-    close_time = markets[0].get("close_time", "unknown")
+    # Console detail block
+    lines = [
+        f"\n{'='*60}",
+        f"{name}  |  {event_ticker}",
+        f"Closes: {close_time}",
+        f"{'Strike':<12} {'Mid':>6} {'Bid':>6} {'Ask':>6} {'Vol24h':>8}",
+        "-" * 45,
+    ]
 
-    print(f"\n{'='*60}")
-    print(f"{name}  |  {event_ticker}")
-    print(f"Closes: {close_time}")
-    print(f"{'Strike':<12} {'Mid':>6} {'Bid':>6} {'Ask':>6} {'Vol24h':>8}")
-    print("-" * 45)
-
-    total_prob = 0
+    total_prob = 0.0
     for strike, mid, bid, ask, vol in distribution[:8]:
         total_prob += mid
         bar = "█" * int(mid * 30)
-        print(f"  {strike:>6.1f}%   {mid:>5.2f}  {bid:>5.2f}  {ask:>5.2f}  {vol:>8.0f}  {bar}")
+        lines.append(
+            f"  {strike:>6.1f}%   {mid:>5.2f}  {bid:>5.2f}  {ask:>5.2f}  {vol:>8.0f}  {bar}"
+        )
 
     if market_type == "exact":
-        print(f"\n  Implied probs sum: {total_prob:.2f} (should be ~1.0 for mutually exclusive)")
+        lines.append(f"\n  Implied probs sum: {total_prob:.2f} (should be ~1.0)")
     else:
-        print(f"\n  Threshold market — prices are independent probabilities, not a distribution")
+        lines.append(f"\n  Threshold market — prices are independent probabilities")
 
-    # Most likely outcome
     if distribution:
         top = distribution[0]
-        print(f"  Most likely: {top[0]:.1f}% at {top[1]:.0%} probability")
+        lines.append(f"  Most likely: {top[0]:.1f}% at {top[1]:.0%} probability")
+
+    detail_block = "\n".join(lines)
+
+    # Short summary for iMessage
+    if distribution:
+        top    = distribution[0]
+        second = distribution[1] if len(distribution) > 1 else None
+        summary = f"{name}: {top[0]:.1f}% ({top[1]:.0%})"
+        if second:
+            summary += f" · {second[0]:.1f}% ({second[1]:.0%})"
+    else:
+        summary = f"{name}: no liquid markets"
+
+    return summary, detail_block
 
 
 async def main():
-    print(f"Economic Market Monitor")
-    print(f"Run at: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
-    print(f"Next CPI release: April 10, 2026 at 8:30am ET (March data)")
+    now = datetime.now(timezone.utc).strftime("%b %d %H:%M UTC")
+    header = f"Econ Monitor — {now}"
+    print(header)
+
+    summaries = [header]
+    details   = []
 
     for name, (series, event, mtype) in EVENTS.items():
         try:
-            await analyze_event(name, series, event, mtype)
+            summary, detail = await analyze_event(name, series, event, mtype)
+            summaries.append(f"  {summary}")
+            details.append(detail)
+            print(detail)
         except Exception as e:
-            print(f"\n{name}: error — {e}")
+            msg = f"{name}: error — {e}"
+            summaries.append(f"  {msg}")
+            print(f"\n{msg}")
+
+    # Send compact iMessage
+    imessage_text = "\n".join(summaries)
+    print(f"\n--- iMessage ---\n{imessage_text}\n")
+    send_imessage(imessage_text)
+    print("iMessage sent.")
 
 
 if __name__ == "__main__":
