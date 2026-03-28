@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import time
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone
 from sqlalchemy import select, func
 
 from app.models.db import SessionLocal, init_db
@@ -16,10 +16,17 @@ SERIES_TICKER    = "KXBTCD"
 MARKET_REFRESH   = 900
 SYNC_INTERVAL    = 120
 ARB_WINDOW_HOURS = 6.0
+COOLDOWN_AFTER_TRADE = 600  # 10 min between trades
 
-# ── Guardrails ─────────────────────────────────────────
-MAX_TRADES_PER_DAY   = 3    # hard cap on daily trade count
-COOLDOWN_AFTER_TRADE = 600  # seconds (10 min) before next trade after settlement
+# ── Tiered edge system ─────────────────────────────────
+# Unlimited trades at >20¢ edge — exceptional opportunities always fire
+# Up to 3 trades per tier below that
+EDGE_TIERS = [
+    (0.20, float('inf'), float('inf')),  # (min_edge, max_edge, max_trades)
+    (0.16, 0.20,         3),
+    (0.12, 0.16,         3),
+    (0.08, 0.12,         3),
+]
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,7 +37,6 @@ log = logging.getLogger(__name__)
 
 STRATEGIES = ["macd"]
 
-# In-memory cooldown tracker — resets on restart (intentional)
 _last_trade_time: float = 0.0
 
 
@@ -55,8 +61,43 @@ def hours_to_settlement() -> float:
     return (settlement - now).total_seconds() / 3600
 
 
+async def trades_today_by_edge() -> dict:
+    """
+    Returns count of today's trades bucketed by edge tier.
+    Returns dict like: {'0.20+': 1, '0.16-0.20': 2, '0.12-0.16': 0, '0.08-0.12': 3}
+    """
+    today_start = datetime.now(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    async with SessionLocal() as db:
+        result = await db.execute(
+            select(Trade).where(
+                Trade.created_at >= today_start,
+                Trade.order_id  != None,
+                Trade.order_id  != "dry_run_order",
+            )
+        )
+        trades = result.scalars().all()
+
+    counts = {
+        '0.20+':     0,
+        '0.16-0.20': 0,
+        '0.12-0.16': 0,
+        '0.08-0.12': 0,
+    }
+
+    for t in trades:
+        edge = abs(t.price - 0.5)  # rough edge proxy from stored price
+        # We don't store edge directly so use total count per tier
+        # This is approximated — see note below
+        pass
+
+    # Simpler: just return total count and let caller decide
+    # Store edge in Trade model for accurate bucketing (future improvement)
+    return len(trades)
+
+
 async def trades_today() -> int:
-    """Returns number of trades placed today (UTC)."""
     today_start = datetime.now(timezone.utc).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
@@ -64,8 +105,26 @@ async def trades_today() -> int:
         result = await db.execute(
             select(func.count(Trade.id)).where(
                 Trade.created_at >= today_start,
-                Trade.order_id != None,
-                Trade.order_id != "dry_run_order",
+                Trade.order_id  != None,
+                Trade.order_id  != "dry_run_order",
+            )
+        )
+        return result.scalar() or 0
+
+
+async def trades_today_in_tier(min_edge: float, max_edge: float) -> int:
+    """Count today's trades whose edge falls in [min_edge, max_edge)."""
+    today_start = datetime.now(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    async with SessionLocal() as db:
+        result = await db.execute(
+            select(func.count(Trade.id)).where(
+                Trade.created_at >= today_start,
+                Trade.order_id  != None,
+                Trade.order_id  != "dry_run_order",
+                Trade.edge      >= min_edge,
+                Trade.edge      <  max_edge,
             )
         )
         return result.scalar() or 0
@@ -91,6 +150,29 @@ async def get_contract_price(client, ticker: str) -> float:
         return 0.5
 
 
+async def check_edge_tier(edge: float) -> tuple[bool, str]:
+    """
+    Given a signal's edge, check if this tier has capacity remaining.
+    Returns (can_trade, reason).
+    """
+    abs_edge = abs(edge)
+
+    for min_e, max_e, max_trades in EDGE_TIERS:
+        if abs_edge >= min_e and abs_edge < max_e:
+            if max_trades == float('inf'):
+                return True, f"edge={abs_edge:.3f} in unlimited tier (>{min_e:.0%})"
+
+            tier_label = f"{min_e:.0%}-{max_e:.0%}"
+            count      = await trades_today_in_tier(min_e, max_e)
+
+            if count < max_trades:
+                return True, f"edge={abs_edge:.3f} in tier {tier_label} — {count}/{max_trades} used"
+            else:
+                return False, f"edge={abs_edge:.3f} tier {tier_label} full ({count}/{max_trades})"
+
+    return False, f"edge={abs_edge:.3f} below minimum threshold (0.08)"
+
+
 async def run_bot(strategy_name: str, client, market_ticker: str, hours_left: float):
     global _last_trade_time
 
@@ -110,20 +192,14 @@ async def run_bot(strategy_name: str, client, market_ticker: str, hours_left: fl
             log.info(f"{strategy_name}: open position(s) on {open_tickers} — skipping")
             return
 
-        # ── Post-settlement cooldown ───────────────────────────────────────
+        # ── Post-trade cooldown ────────────────────────────────────────────
         seconds_since_last = time.time() - _last_trade_time
         if _last_trade_time > 0 and seconds_since_last < COOLDOWN_AFTER_TRADE:
             remaining = int(COOLDOWN_AFTER_TRADE - seconds_since_last)
-            log.info(f"{strategy_name}: cooldown — {remaining}s remaining before next trade")
+            log.info(f"{strategy_name}: cooldown — {remaining}s remaining")
             return
 
-        # ── Daily trade limit ──────────────────────────────────────────────
-        count_today = await trades_today()
-        if count_today >= MAX_TRADES_PER_DAY:
-            log.info(f"{strategy_name}: daily limit reached ({count_today}/{MAX_TRADES_PER_DAY}) — done for today")
-            return
-
-        # ── Choose strategy based on time to settlement ────────────────────
+        # ── Choose strategy ────────────────────────────────────────────────
         if hours_left <= ARB_WINDOW_HOURS:
             log.info(f"{strategy_name}: using settlement arb ({hours_left:.1f}hrs to settlement)")
             signal        = await find_best_opportunity(hours_left)
@@ -150,6 +226,13 @@ async def run_bot(strategy_name: str, client, market_ticker: str, hours_left: fl
         if signal.action == "HOLD" or not active_ticker:
             return
 
+        # ── Edge tier check ────────────────────────────────────────────────
+        can_trade, tier_reason = await check_edge_tier(signal.edge)
+        if not can_trade:
+            log.info(f"{strategy_name}: tier limit — {tier_reason}")
+            return
+        log.info(f"{strategy_name}: tier OK — {tier_reason}")
+
         order_result = await place_order(signal, active_ticker, bot.position_size)
 
         if not order_result.success or not order_result.order_id:
@@ -168,6 +251,7 @@ async def run_bot(strategy_name: str, client, market_ticker: str, hours_left: fl
             size       = bot.position_size,
             filled     = False,
             pnl        = 0.0,
+            edge       = abs(signal.edge),
             order_id   = order_result.order_id,
             created_at = datetime.now(timezone.utc),
         )
@@ -179,14 +263,15 @@ async def run_bot(strategy_name: str, client, market_ticker: str, hours_left: fl
         position_manager.record_order(trade)
         _last_trade_time = time.time()
 
-        log.info(f"{strategy_name}: logged {signal.action} ({count_today + 1}/{MAX_TRADES_PER_DAY} today) — order_id={order_result.order_id}")
+        count_today = await trades_today()
+        log.info(f"{strategy_name}: logged {signal.action} ({count_today} today) — order_id={order_result.order_id}")
 
         from app.services.alerter import alert_trade_placed
         await alert_trade_placed(signal.action, active_ticker, signal.price, bot.position_size)
 
 
 async def bot_loop(strategy_name: str, client):
-    log.info(f"{strategy_name}: loop started (every {TICK_INTERVAL}s) — max {MAX_TRADES_PER_DAY}/day, {COOLDOWN_AFTER_TRADE}s cooldown")
+    log.info(f"{strategy_name}: loop started (every {TICK_INTERVAL}s) — tiered edge system, {COOLDOWN_AFTER_TRADE}s cooldown")
 
     market_ticker    = None
     last_market_pick = 0
@@ -221,5 +306,5 @@ async def run_scheduler():
     await init_db()
     client = get_client()
     await position_manager.load_from_db()
-    log.info("Scheduler started — momentum + settlement arb strategy")
+    log.info("Scheduler started — momentum + settlement arb, tiered edge system")
     await asyncio.gather(*[bot_loop(name, client) for name in STRATEGIES])

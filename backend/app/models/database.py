@@ -26,6 +26,7 @@ class Trade(Base):
     size:         Mapped[float]    = mapped_column(Float,  nullable=False)   # dollars
     filled:       Mapped[bool]     = mapped_column(Boolean, default=False)
     pnl:          Mapped[float]    = mapped_column(Float,  default=0.0)      # profit/loss in dollars
+    edge:         Mapped[float]    = mapped_column(Float,  default=0.0)      # arb edge at time of trade
     settled:      Mapped[bool]     = mapped_column(Boolean, default=False)
     order_id:     Mapped[str]      = mapped_column(String, nullable=True)    # Polymarket order ID
     created_at:   Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
