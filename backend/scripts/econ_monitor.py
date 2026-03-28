@@ -22,12 +22,18 @@ import httpx
 IMESSAGE_NUMBER = "5129928658"
 
 EVENTS = {
-    "CPI MoM":      ("KXECONSTATCPI",     "KXECONSTATCPI-26MAR",     "exact"),
-    "Core CPI MoM": ("KXECONSTATCPICORE", "KXECONSTATCPICORE-26MAR", "exact"),
-    "Payrolls":     ("KXPAYROLLS",         None,                      "threshold"),
-    "Unemployment": ("KXECONSTATU3",       None,                      "exact"),
-    "Fed Apr":      ("KXFED",              "KXFED-26APR",             "threshold"),
+    "CPI MoM":      ("KXECONSTATCPI",     "KXECONSTATCPI-26MAR",     "exact",     "%"),
+    "Core CPI MoM": ("KXECONSTATCPICORE", "KXECONSTATCPICORE-26MAR", "exact",     "%"),
+    "Payrolls":     ("KXPAYROLLS",         None,                      "threshold", "k jobs"),
+    "Unemployment": ("KXECONSTATU3",       None,                      "exact",     "%"),
+    "Fed Apr":      ("KXFED",              "KXFED-26APR",             "threshold", "%"),
 }
+
+
+def fmt_strike(strike: float, unit: str) -> str:
+    if unit == "k jobs":
+        return f"{strike/1000:.0f}k"
+    return f"{strike:.1f}%"
 
 
 def send_imessage(message: str):
@@ -90,6 +96,7 @@ async def analyze_event(
     series: str,
     event_ticker: str | None,
     market_type: str = "exact",
+    unit: str = "%",
 ) -> tuple[str, str]:
     """
     Returns (summary_line, detail_block) for console + iMessage.
@@ -136,7 +143,7 @@ async def analyze_event(
         total_prob += mid
         bar = "█" * int(mid * 30)
         lines.append(
-            f"  {strike:>6.1f}%   {mid:>5.2f}  {bid:>5.2f}  {ask:>5.2f}  {vol:>8.0f}  {bar}"
+            f"  {fmt_strike(strike, unit):>8}   {mid:>5.2f}  {bid:>5.2f}  {ask:>5.2f}  {vol:>8.0f}  {bar}"
         )
 
     if market_type == "exact":
@@ -146,7 +153,7 @@ async def analyze_event(
 
     if distribution:
         top = distribution[0]
-        lines.append(f"  Most likely: {top[0]:.1f}% at {top[1]:.0%} probability")
+        lines.append(f"  Most likely: {fmt_strike(top[0], unit)} at {top[1]:.0%} probability")
 
     detail_block = "\n".join(lines)
 
@@ -154,9 +161,9 @@ async def analyze_event(
     if distribution:
         top    = distribution[0]
         second = distribution[1] if len(distribution) > 1 else None
-        summary = f"{name}: {top[0]:.1f}% ({top[1]:.0%})"
+        summary = f"{name}: {fmt_strike(top[0], unit)} ({top[1]:.0%})"
         if second:
-            summary += f" · {second[0]:.1f}% ({second[1]:.0%})"
+            summary += f" · {fmt_strike(second[0], unit)} ({second[1]:.0%})"
     else:
         summary = f"{name}: no liquid markets"
 
@@ -171,9 +178,9 @@ async def main():
     summaries = [header]
     details   = []
 
-    for name, (series, event, mtype) in EVENTS.items():
+    for name, (series, event, mtype, unit) in EVENTS.items():
         try:
-            summary, detail = await analyze_event(name, series, event, mtype)
+            summary, detail = await analyze_event(name, series, event, mtype, unit)
             summaries.append(f"  {summary}")
             details.append(detail)
             print(detail)
