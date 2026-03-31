@@ -5,12 +5,12 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from pydantic import BaseModel
 from datetime import datetime
 
 from app.models.db import get_db
-from app.models.database import BotStatus
+from app.models.database import BotStatus, Trade
 
 router = APIRouter()
 
@@ -28,19 +28,29 @@ class StartBotRequest(BaseModel):
 async def get_all_bots(db: AsyncSession = Depends(get_db)):
     """Returns the current status of all bots."""
     result = await db.execute(select(BotStatus))
-    bots = result.scalars().all()
+    bots   = result.scalars().all()
 
-    return [
-        {
-            "strategy":      b.strategy,
-            "is_running":    b.is_running,
-            "position_size": b.position_size,
-            "total_trades":  b.total_trades,
-            "total_pnl":     round(b.total_pnl, 4),
-            "updated_at":    b.updated_at.isoformat() if b.updated_at else None,
-        }
-        for b in bots
-    ]
+    out = []
+    for bot in bots:
+        # Calculate real P&L from settled trades
+        pnl_result = await db.execute(
+            select(func.sum(Trade.pnl)).where(
+                Trade.strategy == bot.strategy,
+                Trade.settled  == True,
+            )
+        )
+        real_pnl = pnl_result.scalar() or 0.0
+
+        out.append({
+            "strategy":      bot.strategy,
+            "is_running":    bot.is_running,
+            "position_size": bot.position_size,
+            "total_trades":  bot.total_trades,
+            "total_pnl":     round(real_pnl, 4),
+            "updated_at":    bot.updated_at.isoformat() if bot.updated_at else None,
+        })
+
+    return out
 
 
 @router.post("/start")
