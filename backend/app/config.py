@@ -13,7 +13,7 @@ class Config:
     min_momentum_pct: float = 0.3    # minimum momentum %/hr to trade
     min_sell_price:   float = 0.15   # minimum contract price to sell
     min_daily_range:  float = 1000.0 # minimum BTC daily range ($)
-    rsi_sell_min:     float = 55.0   # minimum RSI to allow SELL signal
+    rsi_sell_min:     float = 40.0   # minimum RSI to allow SELL signal
     rsi_buy_max:      float = 45.0   # maximum RSI to allow BUY signal
 
     # ── Arb strategy ──────────────────────────────────
