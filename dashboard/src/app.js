@@ -28,8 +28,11 @@ async function loadAll() {
   await Promise.allSettled([
     checkServer(),
     loadTrades(currentFilter ?? 'all'),
+    loadChart(currentFilter ?? 'all'),
     loadBots(),
     loadMarkets(),
+    loadScanner(),
+    loadEthMonitor(),
   ]);
 }
 

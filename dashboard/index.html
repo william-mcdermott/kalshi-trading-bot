@@ -68,71 +68,61 @@
         </div>
       </div>
 
-      <!-- RSI Bot -->
-      <div class="bot-card" id="bot-rsi">
+      <!-- Market Scanner -->
+      <div class="bot-card" id="bot-scanner">
         <div class="bot-header">
           <div>
-            <div class="bot-name">RSI</div>
-            <div class="bot-desc">mean reversion · rsi 14</div>
-          </div>
-          <div class="toggle-wrap">
-            <label class="toggle">
-              <input type="checkbox" id="toggle-rsi" onchange="toggleBot('rsi', this.checked)"/>
-              <span class="toggle-track"></span>
-            </label>
+            <div class="bot-name">SCANNER</div>
+            <div class="bot-desc">fair value · edge analysis</div>
           </div>
         </div>
         <div class="bot-stats">
           <div class="stat">
-            <div class="stat-val" id="rsi-trades">—</div>
-            <div class="stat-key">trades</div>
+            <div class="stat-val" id="scanner-btc">—</div>
+            <div class="stat-key">btc price</div>
           </div>
           <div class="stat">
-            <div class="stat-val" id="rsi-pnl">—</div>
-            <div class="stat-key">p&amp;l</div>
+            <div class="stat-val" id="scanner-hours">—</div>
+            <div class="stat-key">hrs to settle</div>
           </div>
           <div class="stat">
-            <div class="stat-val" id="rsi-status">offline</div>
-            <div class="stat-key">status</div>
+            <div class="stat-val" id="scanner-top-edge">—</div>
+            <div class="stat-key">top edge</div>
           </div>
         </div>
-        <div class="size-row">
-          <label class="size-label">size $</label>
-          <input class="size-input" id="size-rsi" type="number" value="1" min="1" max="100" step="1"/>
-        </div>
+        <div id="scanner-signal" style="
+          font-family: var(--font-mono);
+          font-size: 10px;
+          color: var(--text-dim);
+          border-top: 1px solid var(--border);
+          padding-top: 8px;
+          margin-top: 4px;
+          line-height: 1.6;
+        ">scanning...</div>
       </div>
 
-      <!-- CVD Bot -->
-      <div class="bot-card" id="bot-cvd">
+      <!-- ETH Monitor -->
+      <div class="bot-card" id="bot-eth">
         <div class="bot-header">
           <div>
-            <div class="bot-name">CVD</div>
-            <div class="bot-desc">volume delta divergence</div>
+            <div class="bot-name">ETH</div>
+            <div class="bot-desc">monitoring liquidity</div>
           </div>
-          <div class="toggle-wrap">
-            <label class="toggle">
-              <input type="checkbox" id="toggle-cvd" onchange="toggleBot('cvd', this.checked)"/>
-              <span class="toggle-track"></span>
-            </label>
-          </div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);padding:2px 6px;border:1px solid var(--border);border-radius:3px;">watch</div>
         </div>
         <div class="bot-stats">
           <div class="stat">
-            <div class="stat-val" id="cvd-trades">—</div>
-            <div class="stat-key">trades</div>
+            <div class="stat-val" id="eth-markets">—</div>
+            <div class="stat-key">tradeable</div>
           </div>
           <div class="stat">
-            <div class="stat-val" id="cvd-pnl">—</div>
-            <div class="stat-key">p&amp;l</div>
+            <div class="stat-val" id="eth-vol">—</div>
+            <div class="stat-key">avg vol</div>
           </div>
           <div class="stat">
-            <div class="stat-val" id="cvd-status">offline</div>
+            <div class="stat-val" id="eth-status">watch</div>
             <div class="stat-key">status</div>
           </div>
-        </div>
-        <div class="size-row">
-          <label class="size-label">size $</label>
-          <input class="size-input" id="size-cvd" type="number" value="1" min="1" max="100" step="1"/>
         </div>
       </div>
     </aside>
@@ -170,8 +160,6 @@
           <div class="filter-tabs">
             <button class="tab active" onclick="setStrategyFilter('all', this)">all</button>
             <button class="tab" onclick="setStrategyFilter('macd', this)">macd</button>
-            <button class="tab" onclick="setStrategyFilter('rsi', this)">rsi</button>
-            <button class="tab" onclick="setStrategyFilter('cvd', this)">cvd</button>
           </div>
         </div>
         <canvas id="pnl-chart" height="140"></canvas>
