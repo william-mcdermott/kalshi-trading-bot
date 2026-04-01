@@ -100,3 +100,47 @@ async def stop_bot(strategy: str, db: AsyncSession = Depends(get_db)):
     await db.commit()
 
     return {"message": f"{strategy} bot stopped"}
+
+
+@router.get("/portfolio")
+async def get_portfolio(db: AsyncSession = Depends(get_db)):
+    from app.services.scheduler import get_client
+    from sqlalchemy import select, func
+    from app.models.database import Trade
+
+    # Get real Kalshi balance
+    try:
+        client  = get_client()
+        balance = await client.get_balance()
+        cash_dollars     = (balance.balance or 0) / 100
+        position_dollars = (balance.portfolio_value or 0) / 100
+        kalshi_total     = cash_dollars + position_dollars
+    except Exception as e:
+        cash_dollars = position_dollars = kalshi_total = None
+
+    # Get bot-tracked P&L from DB
+    pnl_result = await db.execute(
+        select(func.sum(Trade.pnl)).where(Trade.settled == True)
+    )
+    bot_pnl = pnl_result.scalar() or 0.0
+
+    # Count trades
+    trades_result = await db.execute(
+        select(func.count(Trade.id)).where(Trade.settled == True)
+    )
+    settled_trades = trades_result.scalar() or 0
+
+    starting_balance = 100.0
+    total_return_pct = ((kalshi_total - starting_balance) / starting_balance * 100) if kalshi_total else None
+    drift            = (kalshi_total - (starting_balance + bot_pnl)) if kalshi_total else None
+
+    return {
+        "kalshi_cash":       round(cash_dollars, 2) if cash_dollars is not None else None,
+        "kalshi_positions":  round(position_dollars, 2) if position_dollars is not None else None,
+        "kalshi_total":      round(kalshi_total, 2) if kalshi_total is not None else None,
+        "bot_pnl":           round(bot_pnl, 4),
+        "settled_trades":    settled_trades,
+        "starting_balance":  starting_balance,
+        "total_return_pct":  round(total_return_pct, 2) if total_return_pct else None,
+        "drift":             round(drift, 4) if drift is not None else None,
+    }

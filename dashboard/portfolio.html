@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PMBOT / Portfolio</title>
+  <link rel="stylesheet" href="src/styles/main.css">
+  <style>
+    .portfolio-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      max-width: 800px;
+      margin: 32px auto;
+      padding: 0 24px;
+    }
+    .portfolio-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 24px;
+    }
+    .portfolio-card.full-width {
+      grid-column: 1 / -1;
+    }
+    .card-label {
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .card-value {
+      font-size: 32px;
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--text);
+    }
+    .card-sub {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 6px;
+      font-family: var(--font-mono);
+    }
+    .pos { color: var(--green); }
+    .neg { color: var(--red); }
+    .drift-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+    .drift-row:last-child { border-bottom: none; }
+    .drift-label { color: var(--text-dim); }
+    .drift-val { color: var(--text); }
+    .page-header {
+      padding: 24px 24px 0;
+      max-width: 800px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .back-link {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-decoration: none;
+      font-family: var(--font-mono);
+    }
+    .back-link:hover { color: var(--text); }
+    h1 { font-size: 14px; color: var(--text-dim); font-weight: 400; letter-spacing: 0.08em; }
+    .refresh-time {
+      font-size: 10px;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+      margin-left: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="page-header">
+    <a class="back-link" href="index.html">← dashboard</a>
+    <h1>PORTFOLIO</h1>
+    <span class="refresh-time" id="refresh-time">—</span>
+  </div>
+
+  <div class="portfolio-grid">
+
+    <!-- Kalshi Real Balance -->
+    <div class="portfolio-card">
+      <div class="card-label">Kalshi Balance</div>
+      <div class="card-value" id="kalshi-total">—</div>
+      <div class="card-sub" id="kalshi-breakdown">loading...</div>
+    </div>
+
+    <!-- Total Return -->
+    <div class="portfolio-card">
+      <div class="card-label">Total Return</div>
+      <div class="card-value" id="total-return">—</div>
+      <div class="card-sub">starting from $100.00</div>
+    </div>
+
+    <!-- Bot P&L -->
+    <div class="portfolio-card">
+      <div class="card-label">Bot Tracked P&L</div>
+      <div class="card-value" id="bot-pnl">—</div>
+      <div class="card-sub" id="settled-trades">— settled trades</div>
+    </div>
+
+    <!-- Drift -->
+    <div class="portfolio-card">
+      <div class="card-label">Tracking Drift</div>
+      <div class="card-value" id="drift">—</div>
+      <div class="card-sub">kalshi total vs expected</div>
+    </div>
+
+    <!-- Reconciliation -->
+    <div class="portfolio-card full-width">
+      <div class="card-label">Reconciliation</div>
+      <div id="recon-rows" style="margin-top: 12px;">
+        <div class="drift-row">
+          <span class="drift-label">Starting balance</span>
+          <span class="drift-val">$100.00</span>
+        </div>
+        <div class="drift-row">
+          <span class="drift-label">+ Bot P&L (settled trades)</span>
+          <span class="drift-val" id="recon-pnl">—</span>
+        </div>
+        <div class="drift-row">
+          <span class="drift-label">= Expected balance</span>
+          <span class="drift-val" id="recon-expected">—</span>
+        </div>
+        <div class="drift-row">
+          <span class="drift-label">Actual Kalshi balance</span>
+          <span class="drift-val" id="recon-actual">—</span>
+        </div>
+        <div class="drift-row">
+          <span class="drift-label">Drift (manual trades / fees)</span>
+          <span class="drift-val" id="recon-drift">—</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="src/services/api.js"></script>
+  <script>
+    const BASE = 'http://localhost:8000';
+
+    function fmt(val, prefix='$') {
+      if (val === null || val === undefined) return '—';
+      const n = parseFloat(val);
+      return `${prefix}${Math.abs(n).toFixed(2)}`;
+    }
+
+    function fmtPct(val) {
+      if (val === null || val === undefined) return '—';
+      const n = parseFloat(val);
+      return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`;
+    }
+
+    function colorClass(val) {
+      if (val === null || val === undefined) return '';
+      return parseFloat(val) >= 0 ? 'pos' : 'neg';
+    }
+
+    async function loadPortfolio() {
+      try {
+        const r    = await fetch(`${BASE}/api/bots/portfolio`);
+        const data = await r.json();
+
+        // Kalshi balance
+        const total = data.kalshi_total;
+        const el    = document.getElementById('kalshi-total');
+        el.textContent = total !== null ? `$${total.toFixed(2)}` : '—';
+        el.className   = `card-value ${colorClass(total - 100)}`;
+
+        document.getElementById('kalshi-breakdown').textContent =
+          `cash $${(data.kalshi_cash || 0).toFixed(2)} · positions $${(data.kalshi_positions || 0).toFixed(2)}`;
+
+        // Total return
+        const retEl = document.getElementById('total-return');
+        retEl.textContent  = fmtPct(data.total_return_pct);
+        retEl.className    = `card-value ${colorClass(data.total_return_pct)}`;
+
+        // Bot P&L
+        const pnlEl = document.getElementById('bot-pnl');
+        const pnl   = data.bot_pnl || 0;
+        pnlEl.textContent = `${pnl >= 0 ? '+' : ''}$${Math.abs(pnl).toFixed(4)}`;
+        pnlEl.className   = `card-value ${colorClass(pnl)}`;
+
+        document.getElementById('settled-trades').textContent =
+          `${data.settled_trades} settled trades`;
+
+        // Drift
+        const driftEl = document.getElementById('drift');
+        const drift   = data.drift;
+        driftEl.textContent = drift !== null
+          ? `${drift >= 0 ? '+' : ''}$${Math.abs(drift).toFixed(4)}`
+          : '—';
+        driftEl.className = `card-value ${colorClass(drift)}`;
+
+        // Reconciliation rows
+        const expected = 100 + pnl;
+        document.getElementById('recon-pnl').textContent =
+          `${pnl >= 0 ? '+' : ''}$${Math.abs(pnl).toFixed(4)}`;
+        document.getElementById('recon-expected').textContent =
+          `$${expected.toFixed(2)}`;
+        document.getElementById('recon-actual').textContent =
+          total !== null ? `$${total.toFixed(2)}` : '—';
+        document.getElementById('recon-drift').textContent =
+          drift !== null
+            ? `${drift >= 0 ? '+' : '-'}$${Math.abs(drift).toFixed(4)}`
+            : '—';
+
+        // Refresh time
+        document.getElementById('refresh-time').textContent =
+          `updated ${new Date().toLocaleTimeString()}`;
+
+      } catch (err) {
+        console.error('Portfolio load failed:', err);
+      }
+    }
+
+    loadPortfolio();
+    setInterval(loadPortfolio, 30_000);
+  </script>
+</body>
+</html>
