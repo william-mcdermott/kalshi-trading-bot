@@ -97,9 +97,9 @@
 
     <!-- Total Return -->
     <div class="portfolio-card">
-      <div class="card-label">Total Return</div>
+      <div class="card-label">Bot Return</div>
       <div class="card-value" id="total-return">—</div>
-      <div class="card-sub">starting from $100.00</div>
+      <div class="card-sub" id="total-return-sub">— settled trades</div>
     </div>
 
     <!-- Bot P&L -->
@@ -111,7 +111,7 @@
 
     <!-- Drift -->
     <div class="portfolio-card">
-      <div class="card-label">Tracking Drift</div>
+      <div class="card-label">Untracked Activity</div>
       <div class="card-value" id="drift">—</div>
       <div class="card-sub">kalshi total vs expected</div>
     </div>
@@ -180,10 +180,14 @@
         document.getElementById('kalshi-breakdown').textContent =
           `cash $${(data.kalshi_cash || 0).toFixed(2)} · positions $${(data.kalshi_positions || 0).toFixed(2)}`;
 
-        // Total return
-        const retEl = document.getElementById('total-return');
-        retEl.textContent  = fmtPct(data.total_return_pct);
-        retEl.className    = `card-value ${colorClass(data.total_return_pct)}`;
+        // Bot return
+        const botReturn    = (data.bot_pnl / data.starting_balance) * 100;
+        const retEl        = document.getElementById('total-return');
+        retEl.textContent  = `+${botReturn.toFixed(2)}%`;
+        retEl.className    = `card-value pos`;
+
+        document.getElementById('total-return-sub').textContent =
+          `${data.settled_trades} settled trades`;
 
         // Bot P&L
         const pnlEl = document.getElementById('bot-pnl');
