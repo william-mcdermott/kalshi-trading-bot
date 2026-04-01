@@ -27,9 +27,9 @@ import yfinance as yf
 
 # ── Config ─────────────────────────────────────────────
 GOLD_SERIES      = "KXGOLDD"
-GOLD_VOL         = 0.341        # calibrated hourly vol %
+GOLD_VOL         = 0.75         # conservative — March Iran war increased realized vol
 MIN_EDGE         = 0.08         # minimum edge to flag as opportunity
-MIN_VOL_24H      = 50           # minimum 24h volume to consider liquid
+MIN_VOL_24H      = 0            # keep 0 for monitoring, but flag low-vol markets
 IMESSAGE_NUMBER  = "5129928658"
 LOG_FILE         = Path(__file__).parent / "gold_scanner_log.csv"
 SETTLEMENT_HOUR  = 21           # 5pm EDT = 21:00 UTC
@@ -238,6 +238,7 @@ async def main():
 
     for o in opportunities[:15]:
         icon = "✅" if o["signal"] == "BUY" else "🔴" if o["signal"] == "SELL" else "⚠️" if o["signal"].startswith("WEAK") else ""
+        vol_flag = " ⚠️ low vol" if o["vol24"] < 50 else ""
         print(
             f"${o['threshold']:<11,.0f} "
             f"{o['bid']:<6.3f} "
@@ -246,7 +247,7 @@ async def main():
             f"{o['buy_edge']:+.3f}     "
             f"{o['sell_edge']:+.3f}     "
             f"{o['vol24']:<8.0f} "
-            f"{icon} {o['signal']}"
+            f"{icon} {o['signal']}{vol_flag}"
         )
 
     print()
