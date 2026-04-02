@@ -252,9 +252,10 @@ async def main():
     print()
 
     # Match and compare
-    results   = []
-    matched   = 0
-    unmatched = []
+    results      = []
+    matched      = 0
+    skipped_live = 0
+    unmatched    = []
 
     for game in kalshi_games:
         teams = list(game["teams"].keys())
@@ -279,6 +280,16 @@ async def main():
         if not matched_vegas:
             unmatched.append(game["event_ticker"])
             continue
+
+        # ── Skip in-progress games ───────────────────────
+        now = datetime.now(timezone.utc)
+        game_start = datetime.fromisoformat(
+            matched_vegas["commence"].replace("Z", "+00:00")
+        )
+        if game_start < now:
+            skipped_live += 1
+            continue  # Kalshi reflects live score, Vegas may lag — skip
+        # ─────────────────────────────────────────────────
 
         matched += 1
         away_short, home_short = matched_key
@@ -322,7 +333,7 @@ async def main():
     results.sort(key=lambda x: abs(x["edge"]), reverse=True)
 
     # Print
-    print(f"Matched: {matched}/{len(kalshi_games)}  Unmatched: {len(unmatched)}")
+    print(f"Matched: {matched}/{len(kalshi_games)}  Skipped live: {skipped_live}  Unmatched: {len(unmatched)}")
     print()
     print(f"{'Team':<18} {'Kalshi':<8} {'Vegas':<8} {'Edge':<8} {'Vol24h':<10} Signal")
     print("-" * 65)
