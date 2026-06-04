@@ -1,6 +1,7 @@
 # app/bots/settlement_arb_strategy.py
 import math
 import logging
+import statistics
 from dataclasses import dataclass
 from typing import Optional
 
@@ -11,9 +12,19 @@ log = logging.getLogger(__name__)
 
 from app.config import config
 from app.bots.btc_threshold_strategy import fetch_btc_history, calculate_momentum, get_todays_series
+from app.utils.market_regime import get_regime
 MIN_CONTRACT_PRICE      = 0.05
 MAX_CONTRACT_PRICE      = 0.95
-BTC_VOLATILITY_PCT      = 0.56
+MAX_SELL_PRICE          = 0.65   # never SELL a YES contract above this price
+                                  # selling at 0.70+ means risking 70¢ to win 30¢ —
+                                  # backtest shows these are near-certain losers
+
+# Volatility bounds — dynamic realized vol is clamped to this range.
+# Floor prevents underpricing on quiet days (a single news event can still move price).
+# Ceiling prevents overpricing during extreme events (VIX block handles those anyway).
+VOL_FLOOR_PCT           = 0.30   # %/hr minimum
+VOL_CEILING_PCT         = 0.80   # %/hr maximum
+VOL_LOOKBACK_HOURS      = 24     # how many 1hr candles to use for realized vol
 
 
 @dataclass
@@ -35,11 +46,57 @@ def normal_cdf(x: float) -> float:
     return p if x >= 0 else 1 - p
 
 
+def fetch_realized_vol() -> float:
+    """
+    Compute realized BTC volatility from the last 24 one-hour candles.
+
+    Method:
+      - Fetch 24 hourly closes from Kraken
+      - Compute log returns: ln(close[i] / close[i-1])
+      - Std dev of log returns = realized vol per hour (as a fraction)
+      - Convert to percentage and clamp to [VOL_FLOOR_PCT, VOL_CEILING_PCT]
+
+    Returns %/hr as a float (e.g. 0.43 means 0.43%/hr).
+    """
+    try:
+        exchange = ccxt.kraken()
+        # Fetch one extra candle so we get 24 complete returns
+        ohlcv    = exchange.fetch_ohlcv("BTC/USDT", "1h", limit=VOL_LOOKBACK_HOURS + 1)
+        closes   = [candle[4] for candle in ohlcv]
+
+        if len(closes) < 2:
+            log.warning(f"Not enough candles for realized vol — using floor {VOL_FLOOR_PCT}%/hr")
+            return VOL_FLOOR_PCT
+
+        log_returns = [
+            math.log(closes[i] / closes[i - 1])
+            for i in range(1, len(closes))
+        ]
+
+        # Std dev of log returns gives vol per hour as a fraction
+        raw_vol_pct = statistics.stdev(log_returns) * 100
+
+        # Clamp to safe range
+        clamped = max(VOL_FLOOR_PCT, min(VOL_CEILING_PCT, raw_vol_pct))
+
+        if clamped != raw_vol_pct:
+            log.info(
+                f"Realized vol {raw_vol_pct:.3f}%/hr clamped to {clamped:.3f}%/hr "
+                f"({'floor' if clamped == VOL_FLOOR_PCT else 'ceiling'})"
+            )
+
+        return round(clamped, 4)
+
+    except Exception as e:
+        log.warning(f"Realized vol fetch failed ({e}) — using floor {VOL_FLOOR_PCT}%/hr")
+        return VOL_FLOOR_PCT
+
+
 def fair_value(
     btc_price: float,
     threshold: float,
     hours_to_settlement: float,
-    volatility_pct: float = BTC_VOLATILITY_PCT,
+    volatility_pct: float,
 ) -> float:
     if hours_to_settlement <= 0:
         return 1.0 if btc_price >= threshold else 0.0
@@ -130,6 +187,22 @@ async def find_best_opportunity(hours_to_settlement: float) -> Signal:
             market_ticker="",
         )
 
+    regime, vix, regime_msg = get_regime()
+    if regime == "HIGH":
+        return Signal(
+            action="HOLD", price=0, fair_value=0, edge=0, confidence=0,
+            reason=f"Regime block — {regime_msg}",
+            market_ticker="",
+        )
+    if regime == "ELEVATED":
+        return Signal(
+            action="HOLD", price=0, fair_value=0, edge=0, confidence=0,
+            reason=f"Regime block — {regime_msg}",
+            market_ticker="",
+        )
+    if regime == "UNKNOWN":
+        log.warning("VIX unavailable — proceeding with caution")
+
     daily_range = fetch_daily_range()
     if daily_range < config.min_daily_range:
         return Signal(
@@ -142,7 +215,13 @@ async def find_best_opportunity(hours_to_settlement: float) -> Signal:
     btc_price = prices[-1]
     momentum  = calculate_momentum(prices)
 
-    log.info(f"Arb scan — BTC=${btc_price:,.2f} momentum={momentum:+.2f}%/hr range=${daily_range:,.0f}")
+    # Dynamic realized vol — replaces hardcoded BTC_VOLATILITY_PCT
+    realized_vol = fetch_realized_vol()
+
+    log.info(
+        f"Arb scan — BTC=${btc_price:,.2f} momentum={momentum:+.2f}%/hr "
+        f"realized_vol={realized_vol:.3f}%/hr range=${daily_range:,.0f}"
+    )
 
     markets = await scan_markets(hours_to_settlement)
 
@@ -150,46 +229,71 @@ async def find_best_opportunity(hours_to_settlement: float) -> Signal:
     best_abs_edge = 0.0
 
     for m in markets:
-        fv   = fair_value(btc_price, m["threshold"], hours_to_settlement, config.btc_volatility_pct)
-        edge = fv - m["mid"]
+        fv = fair_value(btc_price, m["threshold"], hours_to_settlement, realized_vol)
 
-        if abs(edge) < config.min_edge:
+        # Compute executable edge against actual execution price, not mid.
+        # BUY: we pay yes_ask, so edge = fv - yes_ask
+        # SELL: we receive yes_bid, so edge = yes_bid - fv (positive = good)
+        edge_buy  = fv - m["yes_ask"]
+        edge_sell = m["yes_bid"] - fv
+
+        # Pick the better side — whichever has positive executable edge
+        if edge_buy >= edge_sell and edge_buy > 0:
+            action    = "BUY"
+            exec_edge = edge_buy
+        elif edge_sell > edge_buy and edge_sell > 0:
+            action    = "SELL"
+            exec_edge = edge_sell
+        else:
+            continue  # no positive executable edge on either side
+
+        if exec_edge < config.min_edge:
             continue
 
         # Directional filter — only block strong opposing momentum
-        if edge > 0 and momentum < -config.momentum_block:
-            # Underpriced YES but momentum strongly bearish — skip
+        if action == "BUY" and momentum < -config.momentum_block:
             continue
-        if edge < 0 and momentum > config.momentum_block:
-            # Overpriced YES but momentum strongly bullish — skip
+        if action == "SELL" and momentum > config.momentum_block:
             continue
 
-        action     = "BUY" if edge > 0 else "SELL"
-        price      = m["yes_ask"] if action == "BUY" else m["yes_bid"]
-        confidence = min(abs(edge) / 0.30, 1.0)
+        price = m["yes_ask"] if action == "BUY" else m["yes_bid"]
+
+        # Never SELL a contract priced above MAX_SELL_PRICE —
+        # e.g. selling YES at 0.81 risks 81¢ to win 19¢ on a near-certain outcome
+        if action == "SELL" and m["yes_bid"] > MAX_SELL_PRICE:
+            log.debug(
+                f"Skipping SELL {m['ticker']} — bid={m['yes_bid']:.2f} > MAX_SELL_PRICE={MAX_SELL_PRICE}"
+            )
+            continue
+
+        confidence = min(exec_edge / 0.30, 1.0)
 
         signal = Signal(
             action        = action,
             price         = price,
             fair_value    = fv,
-            edge          = edge,
+            edge          = exec_edge,
             confidence    = confidence,
             reason        = (
                 f"{action} {m['ticker']} — "
-                f"market={m['mid']:.3f} fair={fv:.3f} edge={edge:+.3f} "
-                f"momentum={momentum:+.2f}%/hr range=${daily_range:,.0f}"
+                f"ask={m['yes_ask']:.3f} bid={m['yes_bid']:.3f} fair={fv:.3f} "
+                f"edge_buy={edge_buy:+.3f} edge_sell={edge_sell:+.3f} exec={exec_edge:+.3f} "
+                f"momentum={momentum:+.2f}%/hr vol={realized_vol:.3f}%/hr range=${daily_range:,.0f}"
             ),
             market_ticker = m["ticker"],
         )
 
-        if abs(edge) > best_abs_edge:
-            best_abs_edge = abs(edge)
+        if exec_edge > best_abs_edge:
+            best_abs_edge = exec_edge
             best_signal   = signal
 
     if best_signal is None:
         return Signal(
             action="HOLD", price=0, fair_value=0, edge=0, confidence=0,
-            reason=f"No opportunity (edge>{config.min_edge:.0%}, range=${daily_range:,.0f}, mom={momentum:+.2f}%/hr)",
+            reason=(
+                f"No opportunity (edge>{config.min_edge:.0%}, "
+                f"vol={realized_vol:.3f}%/hr, range=${daily_range:,.0f}, mom={momentum:+.2f}%/hr)"
+            ),
             market_ticker="",
         )
 

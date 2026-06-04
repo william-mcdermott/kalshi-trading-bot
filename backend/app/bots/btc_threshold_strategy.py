@@ -8,6 +8,7 @@ from typing import Optional
 log = logging.getLogger(__name__)
 
 from app.config import config
+from app.utils.market_regime import get_regime
 TARGET_DISTANCE = 800.0
 
 
@@ -227,6 +228,20 @@ def generate_signal(market_ticker: str, contract_price: float) -> Signal:
             action="HOLD", price=contract_price, confidence=0,
             reason=f"Low volatility (range=${daily_range:,.0f} — need >${config.min_daily_range:,.0f})",
         )
+
+    regime, vix, regime_msg = get_regime()
+    if regime == "HIGH":
+        return Signal(
+            action="HOLD", price=contract_price, confidence=0,
+            reason=f"Regime block — {regime_msg}",
+        )
+    if regime == "ELEVATED":
+        return Signal(
+            action="HOLD", price=contract_price, confidence=0,
+            reason=f"Regime block — {regime_msg}",
+        )
+    if regime == "UNKNOWN":
+        log.warning("VIX unavailable — proceeding with caution")
 
     if contract_price >= 0.95 or contract_price <= 0.05:
         return Signal(
