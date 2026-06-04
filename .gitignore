@@ -6,3 +6,19 @@ __pycache__/
 backend/data/
 backend/*.egg-info/
 backend/venv/
+.DS_Store
+*.log
+*.pid
+*_log.csv
+*_heartbeat.txt
+backend/logs/
+backend/scripts/mlb_odds_cache.json
+__pycache__/
+.venv/
+*.pyc
+# secrets / data
+.env
+*.pem
+*.key
+backend/data/bot.db
+*.duckdb
