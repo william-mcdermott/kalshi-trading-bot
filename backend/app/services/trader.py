@@ -31,6 +31,38 @@ def get_client():
     return KalshiClient(config)
 
 
+async def get_balance() -> float | None:
+    """
+    Fetch current Kalshi cash balance via authenticated API call.
+    Returns balance in dollars, or None on failure.
+    """
+    try:
+        import httpx
+        from kalshi_python_async.auth import KalshiAuth
+
+        with open(KEY_PATH, "r") as f:
+            private_key = f.read()
+
+        auth    = KalshiAuth(key_id=KEY_ID, private_key_pem=private_key)
+        url     = f"{HOST}/portfolio/balance"
+        headers = auth.create_auth_headers("GET", url)
+
+        async with httpx.AsyncClient(timeout=10.0) as http:
+            r    = await http.get(url, headers=headers)
+            data = r.json()
+
+        balance = data.get("balance")
+        if balance is None:
+            log.warning(f"Balance endpoint returned unexpected response: {data}")
+            return None
+
+        return float(balance) / 100  # Kalshi returns cents
+
+    except Exception as e:
+        log.warning(f"Failed to fetch Kalshi balance: {e}")
+        return None
+
+
 async def place_order(signal: Signal, market_ticker: str, size: float) -> OrderResult:
     """
     Places a limit order on Kalshi.

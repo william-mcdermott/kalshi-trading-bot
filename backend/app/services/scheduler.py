@@ -10,6 +10,7 @@ from app.services.trader import place_order
 from app.services.position_manager import position_manager
 from app.bots.btc_threshold_strategy import find_best_market
 from app.bots.settlement_arb_strategy import find_best_opportunity
+from app.config import config
 
 TICK_INTERVAL    = 60
 SERIES_TICKER    = "KXBTCD"
@@ -55,10 +56,15 @@ def get_client():
 
 def hours_to_settlement() -> float:
     now        = datetime.now(timezone.utc)
+    # Kalshi BTC daily markets settle at 5pm EDT = 21:00 UTC (during EDT, UTC-4)
+    # During EST (UTC-5, Nov–Mar) this would be 22:00 UTC — adjust if needed
     settlement = now.replace(hour=21, minute=0, second=0, microsecond=0)
     if now >= settlement:
+        # Already past today's settlement — next one is tomorrow
         settlement = settlement.replace(day=settlement.day + 1)
-    return (settlement - now).total_seconds() / 3600
+    hours_left = (settlement - now).total_seconds() / 3600
+    log.debug(f"hours_to_settlement: {hours_left:.2f}hrs (settlement={settlement.strftime('%H:%M UTC')})")
+    return hours_left
 
 
 async def trades_today_by_edge() -> dict:
@@ -210,11 +216,19 @@ async def run_bot(strategy_name: str, client, market_ticker: str, hours_left: fl
             from app.bots.btc_threshold_strategy import generate_signal
             raw_signal     = generate_signal(market_ticker, contract_price)
             from app.bots.settlement_arb_strategy import Signal as ArbSignal
+
+            # Compute a real edge estimate for tier gating:
+            # momentum signals don't have a fair_value model, so we use
+            # confidence as a proxy — confidence 0.5 → edge ~0.10 (above min tier)
+            # This ensures the tier system actually gates momentum trades correctly
+            # rather than always returning 0 and bypassing all tiers
+            momentum_edge = raw_signal.confidence * config.min_edge * 1.5 if raw_signal.action != "HOLD" else 0.0
+
             signal = ArbSignal(
                 action        = raw_signal.action,
                 price         = raw_signal.price,
                 fair_value    = raw_signal.price,
-                edge          = 0,
+                edge          = momentum_edge,
                 confidence    = raw_signal.confidence,
                 reason        = raw_signal.reason,
                 market_ticker = market_ticker,

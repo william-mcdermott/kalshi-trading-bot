@@ -8,6 +8,7 @@ from app.routes import trades, bots, market
 from app.services.scheduler import run_scheduler, get_client
 from app.services.fill_tracker import run_fill_tracker
 from app.routes import backtest, settings
+from app.routes import mlb
 
 log = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ app.include_router(bots.router,     prefix="/api/bots",     tags=["bots"])
 app.include_router(market.router,   prefix="/api/market",   tags=["market"])
 app.include_router(backtest.router, prefix="/api/backtest", tags=["backtest"])
 app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
+app.include_router(mlb.router, prefix="/api/mlb", tags=["mlb"])
 
 @app.get("/health")
 def health():
