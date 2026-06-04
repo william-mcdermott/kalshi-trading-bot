@@ -22,3 +22,5 @@ __pycache__/
 *.key
 backend/data/bot.db
 *.duckdb
+*_backtest_results.csv
+run_total_backtest.csv
