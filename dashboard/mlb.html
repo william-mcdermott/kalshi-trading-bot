@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PMBOT — MLB Scanner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="src/styles/main.css"/>
+  <style>
+    .mlb-layout {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 16px;
+      height: calc(100vh - 48px);
+      margin-top: 48px;
+      overflow-y: auto;
+    }
+
+    /* ── KPI strip ── */
+    .kpi-strip {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+
+    .kpi-cell {
+      background: var(--bg-card);
+      padding: 14px 16px;
+      text-align: center;
+    }
+
+    .kpi-val {
+      font-family: var(--font-mono);
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .kpi-key {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--text-dim);
+      margin-top: 4px;
+    }
+
+    /* ── Live signals ── */
+    .signals-bar {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-height: 52px;
+    }
+
+    .signals-label {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+
+    .signal-chip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 6px 10px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+
+    .signal-chip.buy  { border-color: var(--green-dim); }
+    .signal-chip.sell { border-color: rgba(255,77,106,0.3); }
+
+    .sig-badge {
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      padding: 2px 5px;
+      border-radius: 3px;
+    }
+
+    .sig-badge.buy  { background: rgba(0,229,160,0.12); color: var(--green); }
+    .sig-badge.sell { background: rgba(255,77,106,0.12); color: var(--red); }
+
+    .sig-team  { color: var(--text); }
+    .sig-meta  { color: var(--text-dim); font-size: 10px; }
+    .sig-kelly { color: var(--green); font-size: 10px; }
+
+    .no-signals {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    /* ── Two column layout ── */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    /* ── Panel ── */
+    .panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .panel-title {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--text-dim);
+    }
+
+    .panel-meta {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-dim);
+    }
+
+    /* ── Stat breakdown grids ── */
+    .stat-grid {
+      display: grid;
+      gap: 1px;
+      background: var(--border);
+    }
+
+    .stat-grid-2 { grid-template-columns: 1fr 1fr; }
+    .stat-grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .stat-grid-4 { grid-template-columns: repeat(4, 1fr); }
+
+    .stat-cell {
+      background: var(--bg);
+      padding: 10px 12px;
+    }
+
+    .stat-cell-label {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 6px;
+    }
+
+    .stat-cell-val {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .stat-cell-sub {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      color: var(--text-dim);
+      margin-top: 3px;
+    }
+
+    /* ── Chart ── */
+    .chart-wrap {
+      padding: 12px 16px 16px;
+      position: relative;
+      height: 160px;
+    }
+
+    /* ── Signal log table ── */
+    .log-wrap {
+      overflow-y: auto;
+      max-height: 340px;
+    }
+
+    .log-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+
+    .log-table thead th {
+      position: sticky;
+      top: 0;
+      background: var(--bg-card);
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-dim);
+      padding: 8px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      font-weight: 400;
+      white-space: nowrap;
+    }
+
+    .log-table tbody td {
+      padding: 7px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.03);
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    .log-table tbody tr:hover td { background: rgba(255,255,255,0.02); }
+    .log-table tbody tr:last-child td { border-bottom: none; }
+
+    .outcome-dot {
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      margin-right: 5px;
+      vertical-align: middle;
+    }
+
+    .dot-correct { background: var(--green); }
+    .dot-wrong   { background: var(--red); }
+    .dot-pending { background: var(--text-dim); }
+
+    .badge-buy  { background: rgba(0,229,160,0.12); color: var(--green); padding: 1px 6px; border-radius: 3px; font-size: 9px; font-weight: 600; }
+    .badge-sell { background: rgba(255,77,106,0.12); color: var(--red);   padding: 1px 6px; border-radius: 3px; font-size: 9px; font-weight: 600; }
+    .badge-stale { background: rgba(255,255,255,0.05); color: var(--text-dim); padding: 1px 6px; border-radius: 3px; font-size: 9px; }
+
+    .pnl-pos { color: var(--green); }
+    .pnl-neg { color: var(--red); }
+
+    /* ── Filter tabs ── */
+    .filter-row {
+      display: flex;
+      gap: 4px;
+    }
+
+    .ftab {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text-dim);
+      padding: 3px 10px;
+      cursor: pointer;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      transition: all 0.15s;
+    }
+
+    .ftab:hover  { color: var(--text); border-color: var(--border-hi); }
+    .ftab.active { color: var(--green); border-color: var(--green-dim); background: rgba(0,229,160,0.06); }
+
+    /* ── Refresh btn ── */
+    .refresh-btn {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text-dim);
+      padding: 3px 10px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .refresh-btn:hover { color: var(--text); border-color: var(--border-hi); }
+
+    /* ── Empty / loading ── */
+    .empty-row td {
+      text-align: center;
+      padding: 32px !important;
+      color: var(--text-dim);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="logo">PMBOT</span>
+      <span class="separator">/</span>
+      <nav style="display:flex;gap:0;">
+        <a href="index.html"   class="nav-link">dashboard</a>
+        <a href="backtest.html" class="nav-link">backtest</a>
+        <a href="settings.html" class="nav-link">settings</a>
+        <a href="portfolio.html" class="nav-link">portfolio</a>
+        <a href="mlb.html"     class="nav-link nav-active">mlb</a>
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <span class="clock" id="clock">--:--:--</span>
+      <span class="dot" id="status-dot" style="background:var(--text-dim)"></span>
+      <span class="server-status" id="status-text">loading...</span>
+    </div>
+  </header>
+
+  <main class="mlb-layout">
+
+    <!-- Live signals bar -->
+    <div class="signals-bar">
+      <span class="signals-label">live signals</span>
+      <div id="live-signals" style="display:flex;gap:8px;flex-wrap:wrap;flex:1;">
+        <span class="no-signals">no games in progress</span>
+      </div>
+      <span style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim)" id="last-scan">—</span>
+    </div>
+
+    <!-- KPI strip -->
+    <div class="kpi-strip">
+      <div class="kpi-cell">
+        <div class="kpi-val" id="kpi-signals">—</div>
+        <div class="kpi-key">total signals</div>
+      </div>
+      <div class="kpi-cell">
+        <div class="kpi-val" id="kpi-winrate">—</div>
+        <div class="kpi-key">win rate</div>
+      </div>
+      <div class="kpi-cell">
+        <div class="kpi-val" id="kpi-kelly-pnl">—</div>
+        <div class="kpi-key">kelly p&amp;l</div>
+      </div>
+      <div class="kpi-cell">
+        <div class="kpi-val" id="kpi-kelly-roi">—</div>
+        <div class="kpi-key">kelly roi</div>
+      </div>
+      <div class="kpi-cell">
+        <div class="kpi-val" id="kpi-avg-edge">—</div>
+        <div class="kpi-key">avg edge</div>
+      </div>
+      <div class="kpi-cell">
+        <div class="kpi-val" id="kpi-pending">—</div>
+        <div class="kpi-key">pending</div>
+      </div>
+    </div>
+
+    <!-- Chart + breakdowns row -->
+    <div class="two-col">
+
+      <!-- Kelly P&L chart -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">cumulative kelly p&amp;l</span>
+          <span class="panel-meta" id="chart-meta">—</span>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="kelly-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- Breakdown stats -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">accuracy breakdown</span>
+          <div class="filter-row">
+            <button class="ftab active" onclick="setBreakdown('inning', this)">inning</button>
+            <button class="ftab" onclick="setBreakdown('edge', this)">edge</button>
+            <button class="ftab" onclick="setBreakdown('run_diff', this)">run diff</button>
+          </div>
+        </div>
+        <div id="breakdown-grid" class="stat-grid stat-grid-4" style="margin:0;">
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Signal log -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">signal log</span>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="filter-row">
+            <button class="ftab active" onclick="setLogFilter('all', this)">all</button>
+            <button class="ftab" onclick="setLogFilter('BUY', this)">buy</button>
+            <button class="ftab" onclick="setLogFilter('SELL', this)">sell</button>
+            <button class="ftab" onclick="setLogFilter('correct', this)">correct</button>
+            <button class="ftab" onclick="setLogFilter('wrong', this)">wrong</button>
+            <button class="ftab" onclick="setLogFilter('pending', this)">pending</button>
+          </div>
+          <button class="refresh-btn" onclick="loadAll()">↻</button>
+        </div>
+      </div>
+      <div class="log-wrap">
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>time</th>
+              <th>game</th>
+              <th>team</th>
+              <th>inn</th>
+              <th>signal</th>
+              <th>edge</th>
+              <th>model</th>
+              <th>kalshi</th>
+              <th>run Δ</th>
+              <th>½-kelly</th>
+              <th>outcome</th>
+              <th>p&amp;l</th>
+            </tr>
+          </thead>
+          <tbody id="log-tbody">
+            <tr class="empty-row"><td colspan="12">loading signals...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script>
+    const API = 'http://localhost:8000/api/mlb';
+
+    let allSignals   = [];   // all BUY/SELL rows from scanner log
+    let btResults    = {};   // game_pk → {correct, score, winner}
+    let logFilter    = 'all';
+    let breakdownKey = 'inning';
+    let kellyChart   = null;
+
+    // ── Clock ──────────────────────────────────────────
+    function tick() {
+      document.getElementById('clock').textContent =
+        new Date().toLocaleTimeString('en-US', { hour12: false });
+    }
+    setInterval(tick, 1000);
+    tick();
+
+    // ── Load everything ────────────────────────────────
+    async function loadAll() {
+      setStatus('loading');
+      try {
+        const [scanRows, btRows, liveRows] = await Promise.all([
+          fetch(`${API}/signals?limit=1000`).then(r => r.json()),
+          fetch(`${API}/backtest?limit=1000`).then(r => r.json()).catch(() => []),
+          fetch(`${API}/signals/live`).then(r => r.json()).catch(() => []),
+        ]);
+
+        // Index backtest outcomes by game_pk
+        btResults = {};
+        for (const r of btRows) {
+          const pk = r.game_pk;
+          if (pk && !btResults[pk]) {
+            btResults[pk] = {
+              correct: r.correct === 'True',
+              score:   r.score   || '',
+              winner:  r.winner  || '',
+            };
+          }
+        }
+
+        // Scanner rows come back newest-first from API — reverse for chart ordering
+        allSignals = [...scanRows].reverse().filter(r => r.signal === 'BUY' || r.signal === 'SELL');
+
+        renderKPIs();
+        renderChart();
+        renderBreakdown();
+        renderLog(scanRows); // pass original (newest-first) for log display
+        renderLiveSignals(liveRows);
+
+        document.getElementById('last-scan').textContent =
+          scanRows.length > 0
+            ? 'last: ' + (scanRows[0].scan_time?.slice(0, 16) || '—')
+            : '—';
+
+        setStatus('ok');
+      } catch (err) {
+        console.error(err);
+        setStatus('error');
+      }
+    }
+
+    // ── Status dot ─────────────────────────────────────
+    function setStatus(state) {
+      const dot  = document.getElementById('status-dot');
+      const text = document.getElementById('status-text');
+      if (state === 'ok') {
+        dot.style.background  = 'var(--green)';
+        text.textContent      = 'loaded';
+      } else if (state === 'loading') {
+        dot.style.background  = 'var(--text-dim)';
+        text.textContent      = 'loading...';
+      } else {
+        dot.style.background  = 'var(--red)';
+        text.textContent      = 'error';
+      }
+    }
+
+    // ── Outcome helper ─────────────────────────────────
+    function getOutcome(row) {
+      const pk = row.game_pk;
+      if (!pk || !btResults[pk]) return 'pending';
+      return btResults[pk].correct ? 'correct' : 'wrong';
+    }
+
+    // ── Kelly P&L helper ───────────────────────────────
+    function kellyPnl(row) {
+      const halfKelly = parseFloat(row.half_kelly);
+      if (!halfKelly || isNaN(halfKelly)) return null;
+
+      const outcome = getOutcome(row);
+      if (outcome === 'pending') return null;
+
+      const price = row.signal === 'BUY'
+        ? parseFloat(row.kalshi_ask)
+        : 1 - parseFloat(row.kalshi_bid);
+
+      if (!price || price <= 0 || price >= 1) return null;
+
+      const payout = halfKelly / price;
+      return outcome === 'correct' ? payout - halfKelly : -halfKelly;
+    }
+
+    // ── KPIs ───────────────────────────────────────────
+    function renderKPIs() {
+      const resolved = allSignals.filter(r => getOutcome(r) !== 'pending');
+      const correct  = resolved.filter(r => getOutcome(r) === 'correct');
+      const pending  = allSignals.filter(r => getOutcome(r) === 'pending');
+      const winRate  = resolved.length > 0 ? correct.length / resolved.length : null;
+
+      // Kelly P&L
+      const kellyRows = allSignals.map(r => kellyPnl(r)).filter(v => v !== null);
+      const totalKPnl = kellyRows.reduce((a, b) => a + b, 0);
+      const totalStaked = allSignals
+        .filter(r => getOutcome(r) !== 'pending' && parseFloat(r.half_kelly) > 0)
+        .reduce((a, r) => a + parseFloat(r.half_kelly), 0);
+      const kRoi = totalStaked > 0 ? totalKPnl / totalStaked : null;
+
+      // Avg edge
+      const edges = allSignals.map(r =>
+        r.signal === 'BUY' ? parseFloat(r.edge_buy) : parseFloat(r.edge_sell)
+      ).filter(v => !isNaN(v));
+      const avgEdge = edges.length > 0 ? edges.reduce((a,b)=>a+b,0)/edges.length : null;
+
+      setText('kpi-signals', allSignals.length || '—');
+      setText('kpi-winrate', winRate !== null ? pct(winRate) : '—',
+        winRate !== null ? (winRate >= 0.5 ? 'var(--green)' : 'var(--red)') : null);
+      setText('kpi-kelly-pnl', kellyRows.length > 0 ? fmtPnl(totalKPnl) : '—',
+        totalKPnl >= 0 ? 'var(--green)' : 'var(--red)');
+      setText('kpi-kelly-roi', kRoi !== null ? (kRoi >= 0 ? '+' : '') + pct(kRoi) : '—',
+        kRoi !== null ? (kRoi >= 0 ? 'var(--green)' : 'var(--red)') : null);
+      setText('kpi-avg-edge', avgEdge !== null ? '+' + pct(avgEdge) : '—');
+      setText('kpi-pending', pending.length || '0');
+    }
+
+    // ── Kelly chart ────────────────────────────────────
+    function renderChart() {
+      const withKelly = allSignals
+        .filter(r => parseFloat(r.half_kelly) > 0 && getOutcome(r) !== 'pending')
+        .sort((a, b) => a.scan_time?.localeCompare(b.scan_time));
+
+      const labels = [];
+      const values = [];
+      let cum = 0;
+
+      for (const r of withKelly) {
+        const pnl = kellyPnl(r);
+        if (pnl === null) continue;
+        cum += pnl;
+        labels.push(r.scan_time?.slice(5, 16) || '');
+        values.push(parseFloat(cum.toFixed(2)));
+      }
+
+      document.getElementById('chart-meta').textContent =
+        values.length > 0
+          ? `${values.length} resolved · ${fmtPnl(values[values.length - 1] ?? 0)}`
+          : 'no kelly data yet';
+
+      if (kellyChart) kellyChart.destroy();
+
+      if (values.length === 0) return;
+
+      const finalPnl  = values[values.length - 1] ?? 0;
+      const lineColor = finalPnl >= 0 ? '#00e5a0' : '#ff4d6a';
+      const fillColor = finalPnl >= 0 ? 'rgba(0,229,160,0.08)' : 'rgba(255,77,106,0.08)';
+
+      const ctx = document.getElementById('kelly-chart').getContext('2d');
+      kellyChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            data:            values,
+            borderColor:     lineColor,
+            backgroundColor: fillColor,
+            borderWidth:     1.5,
+            pointRadius:     values.length < 30 ? 2 : 0,
+            tension:         0.3,
+            fill:            true,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#1a1a1f',
+              borderColor:     '#2a2a35',
+              borderWidth:     1,
+              titleColor:      '#707088',
+              bodyColor:       '#e8e8f0',
+              titleFont:  { family: 'IBM Plex Mono', size: 10 },
+              bodyFont:   { family: 'IBM Plex Mono', size: 11 },
+              callbacks:  { label: ctx => ` ${fmtPnl(ctx.parsed.y)}` },
+            },
+          },
+          scales: {
+            x: {
+              grid:   { color: '#2a2a35' },
+              ticks:  { color: '#505060', font: { family: 'IBM Plex Mono', size: 9 }, maxTicksLimit: 6 },
+              border: { display: false },
+            },
+            y: {
+              grid:   { color: '#2a2a35' },
+              ticks:  { color: '#505060', font: { family: 'IBM Plex Mono', size: 9 }, callback: v => `$${v.toFixed(2)}` },
+              border: { display: false },
+            },
+          },
+        },
+      });
+    }
+
+    // ── Breakdown grid ─────────────────────────────────
+    function setBreakdown(key, btn) {
+      breakdownKey = key;
+      document.querySelectorAll('.ftab').forEach(b => {
+        if (b.closest('.panel-header') && b.textContent.trim() === btn.textContent.trim())
+          b.classList.add('active');
+        else if (b.closest('.panel-header') && ['inning','edge','run diff'].includes(b.textContent.trim()))
+          b.classList.remove('active');
+      });
+      renderBreakdown();
+    }
+
+    function renderBreakdown() {
+      const resolved = allSignals.filter(r => getOutcome(r) !== 'pending');
+      let buckets = [];
+
+      if (breakdownKey === 'inning') {
+        buckets = [
+          { label: 'inn 3–4', filter: r => [3,4].includes(+r.inning) },
+          { label: 'inn 5–6', filter: r => [5,6].includes(+r.inning) },
+          { label: 'inn 7',   filter: r => +r.inning === 7 },
+          { label: 'inn 8–9', filter: r => +r.inning >= 8 },
+        ];
+      } else if (breakdownKey === 'edge') {
+        buckets = [
+          { label: '5–8¢',   filter: r => { const e = execEdge(r); return e >= 0.05 && e < 0.08; } },
+          { label: '8–12¢',  filter: r => { const e = execEdge(r); return e >= 0.08 && e < 0.12; } },
+          { label: '12–20¢', filter: r => { const e = execEdge(r); return e >= 0.12 && e < 0.20; } },
+          { label: '>20¢',   filter: r => execEdge(r) >= 0.20 },
+        ];
+      } else {
+        buckets = [
+          { label: 'tied',   filter: r => +r.run_diff === 0 },
+          { label: '+1–2',   filter: r => Math.abs(+r.run_diff) <= 2 && +r.run_diff !== 0 },
+          { label: '+3–4',   filter: r => Math.abs(+r.run_diff) >= 3 && Math.abs(+r.run_diff) <= 4 },
+          { label: '+5+',    filter: r => Math.abs(+r.run_diff) >= 5 },
+        ];
+      }
+
+      const grid = document.getElementById('breakdown-grid');
+      grid.className = 'stat-grid stat-grid-4';
+      grid.innerHTML = buckets.map(b => {
+        const items   = resolved.filter(b.filter);
+        const correct = items.filter(r => getOutcome(r) === 'correct');
+        const n       = items.length;
+        const wr      = n > 0 ? correct.length / n : null;
+        const color   = wr === null ? 'var(--text-dim)' : wr >= 0.5 ? 'var(--green)' : 'var(--red)';
+        return `
+          <div class="stat-cell">
+            <div class="stat-cell-label">${b.label}</div>
+            <div class="stat-cell-val" style="color:${color}">${wr !== null ? pct(wr) : '—'}</div>
+            <div class="stat-cell-sub">${n > 0 ? `${correct.length}/${n}` : 'no data'}</div>
+          </div>`;
+      }).join('');
+    }
+
+    function execEdge(row) {
+      return row.signal === 'BUY' ? parseFloat(row.edge_buy) : parseFloat(row.edge_sell);
+    }
+
+    // ── Signal log ─────────────────────────────────────
+    function setLogFilter(f, btn) {
+      logFilter = f;
+      document.querySelectorAll('.filter-row .ftab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderLog(null);
+    }
+
+    function renderLog(rows) {
+      // Use passed rows (newest-first from API) or fall back to allSignals reversed
+      let display = rows
+        ? rows.filter(r => r.signal === 'BUY' || r.signal === 'SELL')
+        : [...allSignals].reverse();
+
+      if (logFilter === 'BUY')     display = display.filter(r => r.signal === 'BUY');
+      if (logFilter === 'SELL')    display = display.filter(r => r.signal === 'SELL');
+      if (logFilter === 'correct') display = display.filter(r => getOutcome(r) === 'correct');
+      if (logFilter === 'wrong')   display = display.filter(r => getOutcome(r) === 'wrong');
+      if (logFilter === 'pending') display = display.filter(r => getOutcome(r) === 'pending');
+
+      const tbody = document.getElementById('log-tbody');
+
+      if (display.length === 0) {
+        tbody.innerHTML = `<tr class="empty-row"><td colspan="12">no signals match filter</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = display.slice(0, 200).map(r => {
+        const outcome  = getOutcome(r);
+        const pnl      = kellyPnl(r);
+        const edge     = execEdge(r);
+        const hk       = parseFloat(r.half_kelly);
+        const sigBadge = r.signal === 'BUY'
+          ? '<span class="badge-buy">BUY</span>'
+          : '<span class="badge-sell">SELL</span>';
+
+        let outHtml;
+        if (outcome === 'correct') {
+          const bt = btResults[r.game_pk];
+          outHtml = `<span class="outcome-dot dot-correct"></span>correct ${bt?.score || ''}`;
+        } else if (outcome === 'wrong') {
+          const bt = btResults[r.game_pk];
+          outHtml = `<span class="outcome-dot dot-wrong"></span>wrong ${bt?.score || ''}`;
+        } else {
+          outHtml = `<span class="outcome-dot dot-pending"></span>pending`;
+        }
+
+        const pnlHtml = pnl !== null
+          ? `<span class="${pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${fmtPnl(pnl)}</span>`
+          : '—';
+
+        const game = `${r.away_short || '?'} @ ${r.home_short || '?'}`;
+        const halfStr = r.half === 'Top' ? '▲' : '▼';
+
+        return `<tr>
+          <td style="color:var(--text-dim)">${r.scan_time?.slice(5,16) || '—'}</td>
+          <td style="color:var(--text-dim);font-size:10px">${game}</td>
+          <td>${r.team || '—'}</td>
+          <td style="color:var(--text-dim)">${r.inning}${halfStr}</td>
+          <td>${sigBadge}</td>
+          <td style="color:var(--green)">${!isNaN(edge) ? '+' + pct(edge) : '—'}</td>
+          <td style="color:var(--text-dim)">${parseFloat(r.model_prob || 0).toFixed(2)}</td>
+          <td style="color:var(--text-dim)">${parseFloat(r.kalshi_mid || 0).toFixed(2)}</td>
+          <td style="color:var(--text-dim)">${r.run_diff >= 0 ? '+' : ''}${r.run_diff}</td>
+          <td style="color:var(--green)">${!isNaN(hk) && hk > 0 ? '$' + hk.toFixed(2) : '—'}</td>
+          <td style="font-size:10px">${outHtml}</td>
+          <td>${pnlHtml}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    // ── Live signals ───────────────────────────────────
+    function renderLiveSignals(liveRows) {
+      const el = document.getElementById('live-signals');
+      if (!liveRows || liveRows.length === 0) {
+        el.innerHTML = '<span class="no-signals">no signals in last scan</span>';
+        return;
+      }
+
+      el.innerHTML = liveRows.slice(0, 4).map(r => {
+        const edge  = execEdge(r);
+        const hk    = parseFloat(r.half_kelly);
+        const cls   = r.signal === 'BUY' ? 'buy' : 'sell';
+        const badgeCls = cls;
+        return `
+          <div class="signal-chip ${cls}">
+            <span class="sig-badge ${badgeCls}">${r.signal}</span>
+            <span class="sig-team">${r.team}</span>
+            <span class="sig-meta">inn ${r.inning} · ${!isNaN(edge) ? '+' + pct(edge) : '—'}</span>
+            ${!isNaN(hk) && hk > 0 ? `<span class="sig-kelly">½K $${hk.toFixed(2)}</span>` : ''}
+          </div>`;
+      }).join('');
+    }
+
+    // ── Formatting helpers ─────────────────────────────
+    function pct(v)    { return (v * 100).toFixed(1) + '%'; }
+    function fmtPnl(v) { return (v >= 0 ? '+' : '') + '$' + Math.abs(v).toFixed(2); }
+    function setText(id, val, color) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = val;
+      if (color) el.style.color = color;
+    }
+
+    // ── Init ───────────────────────────────────────────
+    loadAll();
+    setInterval(loadAll, 120_000); // refresh every 2 min
+  </script>
+
+  <style>
+    /* Nav link helpers — inline since main.css may not have mlb-specific active state */
+    .nav-link {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-dim);
+      padding: 0 16px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      text-decoration: none;
+      border-bottom: 2px solid transparent;
+      transition: color 0.15s;
+    }
+    .nav-link:hover  { color: var(--text); }
+    .nav-active { color: var(--green) !important; border-bottom-color: var(--green) !important; }
+  </style>
+
+</body>
+</html>
