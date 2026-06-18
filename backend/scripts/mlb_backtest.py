@@ -14,6 +14,7 @@ Usage:
 
 import argparse
 import csv
+import math
 import sys
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -185,6 +186,25 @@ def calc_ev(model_prob: float, exec_edge: float, signal: str) -> float:
     return exec_edge
 
 
+# ── Kalshi trading fee ─────────────────────────────────
+# Taker: round_up_to_cent(0.07 * C * P * (1-P))   (general markets, incl. sports)
+# Maker: round_up_to_cent(0.0175 * C * P * (1-P)) (resting limit orders)
+# Charged on ENTRY only — Kalshi has no settlement fee. Rounding is per ORDER,
+# not per contract, so passing the real contract count matters (1-contract
+# orders pay the worst-case rounding). Confirm the live KXMLBGAME multiplier at
+# kalshi.com/fee-schedule before trusting these numbers with capital.
+FEE_TAKER = 0.07
+FEE_MAKER = 0.0175
+
+def kalshi_fee(price: float, contracts: float, maker: bool = False) -> float:
+    """Entry fee in dollars for an order of `contracts` at `price`."""
+    if price <= 0 or price >= 1 or contracts <= 0:
+        return 0.0
+    mult = FEE_MAKER if maker else FEE_TAKER
+    raw  = mult * contracts * price * (1 - price)
+    return math.ceil(raw * 100) / 100  # round up to next cent, per order
+
+
 # ── Main ───────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(description="Backtest MLB live scanner signals")
@@ -197,6 +217,10 @@ def main():
     parser.add_argument("--reverse",    action="store_true",      help="Flip signal correctness — models what P&L would be if you traded the opposite of every signal")
     parser.add_argument("--min-kelly",  type=float, default=0.0,
                         help="Min half_kelly dollar size to include (filters pre-Kelly rows if 0)")
+    parser.add_argument("--no-fees",    action="store_true",
+                        help="Disable fee modeling (reproduces the old frictionless ROI number)")
+    parser.add_argument("--maker",      action="store_true",
+                        help="Use maker (resting-limit) fees instead of taker. Assumes your limit fills — optimistic.")
     args = parser.parse_args()
 
     rows = load_log(args.log)
@@ -439,11 +463,16 @@ def main():
         print("\n" + "=" * 60)
         print("KELLY ROI SIMULATION")
         print("=" * 60)
-        print("(Half-Kelly sizing — what P&L would have been if you followed the bot)")
+        fee_label = ("NO FEES (frictionless)" if args.no_fees
+                     else "MAKER fees (assumes limit fills)" if args.maker
+                     else "TAKER fees (crossing the spread)")
+        print(f"(Half-Kelly sizing — what P&L would have been if you followed the bot)")
+        print(f"(Fee model: {fee_label})")
         print()
 
         total_staked = 0.0
         total_pnl    = 0.0
+        total_fees   = 0.0
         wins         = 0
         losses       = 0
 
@@ -457,11 +486,17 @@ def main():
             if price <= 0 or price >= 1:
                 continue
 
+            # Contract count drives fee rounding (per order). Prefer the logged
+            # count; fall back to deriving it from stake/price.
+            contracts = d.get("kelly_contracts") or (stake / price)
+            fee = 0.0 if args.no_fees else kalshi_fee(price, contracts, maker=args.maker)
+
             payout    = stake / price          # gross return if win
-            profit    = payout - stake         # net profit if win
-            loss      = -stake                 # net loss if wrong
+            profit    = payout - stake - fee   # net profit if win (fee paid on entry)
+            loss      = -stake - fee           # net loss if wrong (fee still paid)
 
             total_staked += stake
+            total_fees   += fee
             if d["correct"]:
                 total_pnl += profit
                 wins      += 1
@@ -472,17 +507,20 @@ def main():
         n        = wins + losses
         roi      = total_pnl / total_staked if total_staked > 0 else 0
         win_rate = wins / n if n > 0 else 0
+        gross_pnl = total_pnl + total_fees
 
         print(f"  Signals with Kelly data : {n}")
         print(f"  Win rate                : {win_rate:.1%}  ({wins}W / {losses}L)")
         print(f"  Total staked            : ${total_staked:.2f}")
-        print(f"  Total P&L               : ${total_pnl:+.2f}")
-        print(f"  ROI                     : {roi:+.1%}")
+        print(f"  Total fees paid         : ${total_fees:.2f}")
+        print(f"  Gross P&L (pre-fee)      : ${gross_pnl:+.2f}  ({(gross_pnl/total_staked if total_staked else 0):+.1%})")
+        print(f"  Net P&L (post-fee)       : ${total_pnl:+.2f}")
+        print(f"  Net ROI                 : {roi:+.1%}")
 
         # Kelly ROI by edge bucket
         print()
-        print(f"  {'Edge Range':<16} {'N':>4} {'Staked':>8} {'P&L':>10} {'ROI':>8}")
-        print(f"  {'-'*50}")
+        print(f"  {'Edge Range':<16} {'N':>4} {'Staked':>8} {'GrossROI':>9} {'Fees':>7} {'NetROI':>8}")
+        print(f"  {'-'*58}")
 
         buckets = [
             (0.05, 0.08, "5–8¢"),
@@ -492,20 +530,24 @@ def main():
         ]
         for lo, hi, label in buckets:
             bucket = [d for d in kelly_rows if lo <= abs(d["exec_edge"]) < hi]
-            b_staked = b_pnl = 0.0
+            b_staked = b_pnl = b_fees = 0.0
             b_n = 0
             for d in bucket:
                 stake = d["half_kelly"]
                 price = d["kalshi_ask"] if d["signal"] == "BUY" else 1 - d["kalshi_bid"]
                 if price <= 0 or price >= 1:
                     continue
+                contracts = d.get("kelly_contracts") or (stake / price)
+                fee = 0.0 if args.no_fees else kalshi_fee(price, contracts, maker=args.maker)
                 payout = stake / price
                 b_staked += stake
-                b_pnl    += (payout - stake) if d["correct"] else -stake
+                b_fees   += fee
+                b_pnl    += (payout - stake - fee) if d["correct"] else (-stake - fee)
                 b_n      += 1
-            b_roi = b_pnl / b_staked if b_staked > 0 else 0
+            net_roi   = b_pnl / b_staked if b_staked > 0 else 0
+            gross_roi = (b_pnl + b_fees) / b_staked if b_staked > 0 else 0
             if b_n > 0:
-                print(f"  {label:<16} {b_n:>4} ${b_staked:>7.2f} ${b_pnl:>+9.2f} {b_roi:>+7.1%}")
+                print(f"  {label:<16} {b_n:>4} ${b_staked:>7.2f} {gross_roi:>+8.1%} ${b_fees:>6.2f} {net_roi:>+7.1%}")
     else:
         print("\n  (No Kelly data yet — run scanner for a few games to populate)")
 
