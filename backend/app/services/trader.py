@@ -63,17 +63,22 @@ async def get_balance() -> float | None:
         return None
 
 
-async def place_order(signal: Signal, market_ticker: str, size: float) -> OrderResult:
+async def place_order(signal: Signal, market_ticker: str, size: float, count: int = 1) -> OrderResult:
     """
     Places a limit order on Kalshi.
     market_ticker is the Kalshi market ticker e.g. "HIGHNY-23DEC-T70"
-    size is in dollars — Kalshi uses cents internally so we convert
+    size is in dollars (kept for logging/compat).
+    count is the number of contracts to trade. Defaults to 1 so existing
+    callers (e.g. the BTC scheduler) are unchanged; pass an explicit count
+    to size the order off Kelly.
     """
     if signal.action == "HOLD":
         return OrderResult(success=False, order_id=None, message="No action on HOLD")
 
+    count = max(1, int(count))
+
     if DRY_RUN:
-        log.info(f"[DRY RUN] {signal.action} {market_ticker} @ {signal.price:.3f} size=${size}")
+        log.info(f"[DRY RUN] {signal.action} {market_ticker} @ {signal.price:.3f} x{count} (size=${size})")
         return OrderResult(success=True, order_id="dry_run_order", message="Dry run")
 
     try:
@@ -84,11 +89,11 @@ async def place_order(signal: Signal, market_ticker: str, size: float) -> OrderR
             ticker=market_ticker,
             side="yes",
             action=signal.action.lower(),
-            count=1,
+            count=count,
             yes_price=int(signal.price * 100),
         )
         
-        log.info(f"Order placed — id={order.order.order_id}")
+        log.info(f"Order placed — id={order.order.order_id} x{count}")
         return OrderResult(success=True, order_id=order.order.order_id, message="Order placed")
 
     except Exception as e:

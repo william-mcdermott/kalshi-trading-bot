@@ -24,3 +24,4 @@ backend/data/bot.db
 *.duckdb
 *_backtest_results.csv
 run_total_backtest.csv
+mlb_shadow_intents.csv
