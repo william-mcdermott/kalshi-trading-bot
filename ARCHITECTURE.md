@@ -150,12 +150,47 @@ GET /api/trades?strategy=macd
 
 The `Depends(get_db)` pattern is FastAPI's dependency injection — equivalent to Angular's `@Injectable()` services. Each request gets its own database session, automatically closed when the response is sent.
 
+## The MLB scanner: alert-first, then staged execution
+
+The MLB model runs as a standalone scanner (`scripts/mlb_live_scanner.py`) scheduled by launchd during game hours, rather than inside the FastAPI scheduler. It started life as alert-only — compute edge, send an iMessage — and execution was layered on deliberately, behind a gate, only after the edge was validated by a fee-aware backtest.
+
+### The model
+
+For each in-progress game it blends pre-game Vegas odds with an in-game win-probability model over score differential, inning, outs, and a starting-pitcher adjustment, then compares against the Kalshi market on the actual bid/ask. Quality scoring and half-Kelly sizing run on top, and a per-game position lock (persisted to disk across scan cycles) prevents re-entering a game already held.
+
+### Auto vs shadow gate
+
+This is the core execution decision. Only the backtest-validated 8-12¢ edge bucket is routed to live order placement; every other signal is shadow-logged — its intended order is written to a CSV with the touch captured at decision time, but no capital is risked.
+
+```
+top signal selected + Kelly-sized
+  → exec_edge in [0.08, 0.12)?
+        yes → MLB_LIVE and have a market ticker?
+                  yes → place_order (count = capped Kelly)  → register_position on real fill
+                  no  → AUTO_DRY: log intent only
+        no  → SHADOW: log intent only
+```
+
+The split exists because the 8-12¢ bucket carries the fat win-rate cushion that survives fill slippage, while thinner buckets need real fill data before they're trusted. Automating the *bucket* rather than the single best-looking cross-tab cell is intentional — the cell is partly noise from picking the max of a grid, and regresses toward the bucket mean live.
+
+### Safety by construction
+
+Live execution requires two independent switches — `MLB_LIVE` in the scanner and `DRY_RUN=false` in the trader — and is capped to a minimum contract count on rollout. The auto path fails safe: a validated signal with a missing market ticker falls back to dry-logging rather than firing a malformed order. `register_position` is only called on a confirmed live fill, so the cross-cycle position lock reflects real holdings, not intentions.
+
+### Measuring what the backtest can't
+
+A backtest fills every signal at the quoted price for free; live execution does neither. `mlb_reconcile.py` closes that gap — it matches live fills and settlements from Kalshi back to the logged intents and reports realized net ROI, fill rate, and average slippage versus the price each signal saw. `verify_routing.py` confirms the gate offline (a synthetic truth table over edge × live × ticker) and audits the intent log, so routing bugs surface before a dollar moves.
+
+## Shared: market regime filter
+
+`app/utils/market_regime.py` fetches VIX and blocks or warns on signals when volatility is elevated — fat tails break the normal-vol fair-value models. It's wired into the BTC, gold, WTI, and SPX strategies. The MLB model deliberately doesn't use it: baseball outcomes aren't driven by market volatility, so the relevant execution gate there is liquidity and spread, not VIX.
+
 ## What I'd do differently at scale
 
 - **Message queue** — replace the polling fill tracker with a webhook or WebSocket subscription if Kalshi adds support
 - **PostgreSQL** — for multiple machines or strategies sharing state
 - **Redis** — for the position manager cache instead of in-memory dict (survives crashes)
 - **Docker** — containerize the backend for consistent deployment
-- **Backtesting framework** — test strategies against historical data before live trading
+- **Backtesting framework** — built for the MLB model (fee-aware, with live fill reconciliation); the BTC strategies still backtest against a simpler parameter sweep and would benefit from the same fee/slippage treatment
 - **Multiple strategies** — RSI, CVD, and mean-reversion strategies are scaffolded but not yet implemented
 - **Alerting** — email or SMS when large trades fire or drawdown exceeds threshold

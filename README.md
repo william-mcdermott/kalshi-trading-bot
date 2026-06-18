@@ -2,6 +2,8 @@
 
 A live algorithmic trading bot for [Kalshi](https://kalshi.com) — a CFTC-regulated US prediction market exchange. Trades Bitcoin daily price contracts using a momentum + settlement arbitrage strategy. Built in Python as a learning project coming from a JavaScript/TypeScript background.
 
+The system has since grown into a multi-market scanner platform. The BTC bot below is the flagship; a live **MLB in-game win-probability model** with staged, gated automation is the most developed strategy beyond it ([jump to it](#mlb-in-game-win-probability-model)).
+
 **Starting balance:** $100 · **Current balance:** ~$111 · **Live win rate:** 70%+ · **Trades:** 35+
 
 ---
@@ -78,6 +80,8 @@ kalshi-trading-bot/
 │   │   ├── bots/
 │   │   │   ├── btc_threshold_strategy.py  # Momentum + RSI signal generation
 │   │   │   └── settlement_arb_strategy.py # Fair-value arbitrage near settlement
+│   │   ├── utils/
+│   │   │   └── market_regime.py           # Shared VIX regime filter (blocks signals when vol is high)
 │   │   ├── models/
 │   │   │   ├── database.py                # SQLAlchemy table definitions
 │   │   │   └── db.py                      # Async engine + session management
@@ -97,9 +101,15 @@ kalshi-trading-bot/
 │   │   ├── backtest.py                    # Full backtest engine + parameter sweep
 │   │   └── analyze.py                     # Trade outcome analysis
 │   └── scripts/
-│       ├── econ_monitor.py                # CPI/payrolls/Fed market monitor with iMessage alerts
+│       ├── mlb_live_scanner.py            # MLB in-game model: scan, alert, auto/shadow execution gate
+│       ├── mlb_backtest.py                # Fee-aware backtest (taker/maker) on logged signals + outcomes
+│       ├── mlb_reconcile.py               # Live fills/settlements vs logged prices (slippage + fill rate)
+│       ├── verify_routing.py              # Confirms the auto/shadow gate routes correctly
+│       ├── mlb_run_total_scanner.py       # MLB run-total (over/under) edge scanner
 │       ├── gold_scanner.py                # Gold (KXGOLDD) daily edge scanner + CSV logging
-│       └── spx_scanner.py                 # S&P 500 (KXINXU) daily edge scanner + CSV logging
+│       ├── spx_scanner.py                 # S&P 500 (KXINXU) daily edge scanner + CSV logging
+│       ├── wti_scanner.py                 # WTI crude (KXWTID) daily edge scanner + CSV logging
+│       └── econ_monitor.py                # CPI/payrolls/Fed market monitor with iMessage alerts
 └── dashboard/
     ├── index.html                         # Live trading dashboard
     ├── backtest.html                      # Backtest results + parameter sweep
@@ -213,6 +223,27 @@ Coming from a MEAN stack background, this project covered:
 - pandas + linear regression for time-series signal generation
 - Running a live system with real money and real consequences for bugs
 - The importance of position sizing and duplicate-order protection in trading systems
+
+---
+
+## MLB In-Game Win-Probability Model
+
+The most developed strategy beyond BTC. It scans in-progress MLB games, prices each team's live win probability, and trades the gap against the Kalshi game market.
+
+**The model** blends pre-game Vegas odds with an in-game win-probability model driven by score differential, inning, outs, and a starting-pitcher adjustment. Edge is computed against the actual bid/ask, not the mid.
+
+**Signal quality** is gated by a backtest-derived scoring system over edge bucket, inning, and run differential. The 8-12¢ edge bucket is the validated sweet spot; the 12¢+ bucket is a confirmed anti-signal and is capped out, and ±1-run situations are skipped (≈14% accuracy).
+
+**Fee-aware backtesting.** `mlb_backtest.py` reconstructs realized P&L from the live signal log and actual game outcomes, with Kalshi's fee formula modeled explicitly (taker `0.07 × C × P × (1−P)`, maker a quarter of that, rounded up per order). Over 201 Kelly-sized signals: **+34.9% gross ROI, +30.5% net after taker fees, 45.3% win rate.** The 8-12¢ bucket nets +38.4%. Fees re-rank the buckets — a roughly flat ~1.7¢ fee eats a larger share of a smaller edge, so the small-edge buckets erode most.
+
+**Staged automation.** The scanner routes only the validated 8-12¢ bucket to live execution and shadow-logs everything else: the intended order is recorded with the touch captured at decision time, but no capital is risked. Live execution is **off by default**, double-gated behind `MLB_LIVE` + `DRY_RUN`, and capped to minimum size on rollout. `mlb_reconcile.py` then matches live fills and settlements back against the prices the signals assumed, measuring the slippage and fill rate the backtest can't see; `verify_routing.py` confirms the gate offline and audits the intent log before any money moves.
+
+```bash
+python scripts/mlb_live_scanner.py    # scan + alert (+ auto-execute the 8-12c bucket when live)
+python scripts/mlb_backtest.py        # fee-adjusted backtest
+python scripts/mlb_reconcile.py       # real fills/settlements vs logged prices
+python scripts/verify_routing.py      # confirm auto/shadow routing
+```
 
 ---
 
