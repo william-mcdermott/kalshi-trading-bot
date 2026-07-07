@@ -8,6 +8,18 @@ The system has since grown into a multi-market scanner platform. The BTC bot bel
 
 ---
 
+## MCP Server (Agent Interface)
+
+The bot exposes its live data to AI agents through a [Model Context Protocol](https://modelcontextprotocol.io)
+server, so an LLM can inspect the system by calling structured tools rather than reading a static export.
+Four read-only tools cover recent trades, P&L summary, per-strategy bot status, and open positions —
+observation only, with the database opened read-only so an agent can never move real money.
+
+Built on the official `mcp` Python SDK and connectable to Claude Desktop. See
+**[backend/MCP_README.md](backend/MCP_README.md)** for the tools, setup, and design notes.
+
+---
+
 ## What It Does
 
 Every 60 seconds the bot:
