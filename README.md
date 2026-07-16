@@ -1,6 +1,6 @@
 # Kalshi Algorithmic Trading Bot
 
-A live algorithmic trading bot for [Kalshi](https://kalshi.com) — a CFTC-regulated US prediction market exchange. Trades Bitcoin daily price contracts using a momentum + settlement arbitrage strategy. Built in Python as a learning project coming from a JavaScript/TypeScript background.
+A live algorithmic trading bot for [Kalshi](https://kalshi.com) — a CFTC-regulated US prediction market exchange. Trades Bitcoin daily price contracts using a momentum + settlement arbitrage strategy. Built in Python.
 
 The system has since grown into a multi-market scanner platform. The BTC bot below is the flagship; a live **MLB in-game win-probability model** with staged, gated automation is the most developed strategy beyond it ([jump to it](#mlb-in-game-win-probability-model)).
 
